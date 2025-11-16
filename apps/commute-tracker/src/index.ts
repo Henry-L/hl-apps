@@ -1,16 +1,22 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { Firestore, Timestamp } from '@google-cloud/firestore';
+import { Firestore } from '@google-cloud/firestore';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
 const app = express();
 const port = process.env.PORT || 8080;
+
+// JWT Secret (in production, use environment variable)
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this-in-production';
 
 // Initialize Firestore
 const firestore = new Firestore({
   projectId: process.env.GCP_PROJECT || undefined,
 });
 
-const COLLECTION = 'commutes';
+const COMMUTES_COLLECTION = 'commutes';
+const USERS_COLLECTION = 'users';
 
 // Middleware
 app.use(cors());
@@ -18,8 +24,16 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Types
+interface User {
+  id?: string;
+  username: string;
+  passwordHash: string;
+  createdAt: string;
+}
+
 interface CommuteEntry {
   id?: string;
+  userId: string;
   date: string; // YYYY-MM-DD
   departureTime: string; // HH:MM
   arrivalTime: string; // HH:MM
@@ -36,6 +50,11 @@ interface DayStats {
   optimalDepartureStart: string;
   optimalDepartureEnd: string;
   totalCommutes: number;
+}
+
+interface AuthRequest extends Request {
+  userId?: string;
+  username?: string;
 }
 
 // Helper functions
@@ -66,7 +85,29 @@ function minutesToTime(minutes: number): string {
   return `${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
 }
 
-// HTML Template
+// Auth middleware
+function authenticateToken(req: AuthRequest, res: Response, next: NextFunction) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    res.status(401).json({ error: 'Authentication required' });
+    return;
+  }
+
+  jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => {
+    if (err) {
+      res.status(403).json({ error: 'Invalid or expired token' });
+      return;
+    }
+
+    req.userId = decoded.userId;
+    req.username = decoded.username;
+    next();
+  });
+}
+
+// HTML Template with Login
 const HTML_TEMPLATE = `
 <!DOCTYPE html>
 <html lang="en">
@@ -91,21 +132,61 @@ const HTML_TEMPLATE = `
             max-width: 1200px;
             margin: 0 auto;
         }
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+        }
+        .login-card {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .login-card h1 {
+            color: #4f46e5;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .login-card .subtitle {
+            color: #64748b;
+            text-align: center;
+            margin-bottom: 30px;
+        }
         .header {
             background: white;
             border-radius: 20px;
             padding: 30px;
             margin-bottom: 20px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-        h1 {
+        .header-left h1 {
             color: #4f46e5;
             font-size: 2.5em;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
         }
-        .subtitle {
+        .header-left .subtitle {
             color: #64748b;
             font-size: 1.1em;
+        }
+        .user-info {
+            text-align: right;
+        }
+        .username {
+            color: #1e293b;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .logout-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
         }
         .cards {
             display: grid;
@@ -267,13 +348,46 @@ const HTML_TEMPLATE = `
             color: #991b1b;
             display: block;
         }
+        #app-container {
+            display: none;
+        }
+        #login-container {
+            display: block;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
+    <!-- Login Screen -->
+    <div id="login-container" class="login-container">
+        <div class="login-card">
             <h1>🚗 Commute Tracker</h1>
-            <p class="subtitle">Optimize your morning commute with data</p>
+            <p class="subtitle">Please log in to continue</p>
+            <div id="login-message" class="message"></div>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="login-username">Username</label>
+                    <input type="text" id="login-username" name="username" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" name="password" required autocomplete="current-password">
+                </div>
+                <button type="submit">Log In</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App (shown after login) -->
+    <div id="app-container" class="container">
+        <div class="header">
+            <div class="header-left">
+                <h1>🚗 Commute Tracker</h1>
+                <p class="subtitle">Optimize your morning commute with data</p>
+            </div>
+            <div class="user-info">
+                <div class="username">Logged in as: <span id="current-username"></span></div>
+                <button class="logout-btn" onclick="logout()">Log Out</button>
+            </div>
         </div>
 
         <div id="message" class="message"></div>
@@ -343,15 +457,107 @@ const HTML_TEMPLATE = `
             : '';
 
         let weekChart = null;
+        let authToken = localStorage.getItem('authToken');
+        let currentUsername = localStorage.getItem('username');
 
-        // Set today's date as default
-        document.getElementById('date').valueAsDate = new Date();
+        // Check if already logged in
+        if (authToken) {
+            showApp();
+        }
+
+        function showLogin() {
+            document.getElementById('login-container').style.display = 'block';
+            document.getElementById('app-container').style.display = 'none';
+        }
+
+        function showApp() {
+            document.getElementById('login-container').style.display = 'none';
+            document.getElementById('app-container').style.display = 'block';
+            document.getElementById('current-username').textContent = currentUsername || 'User';
+            document.getElementById('date').valueAsDate = new Date();
+            loadData();
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('username');
+            authToken = null;
+            currentUsername = null;
+            showLogin();
+        }
+
+        function showLoginMessage(text, type) {
+            const msg = document.getElementById('login-message');
+            msg.textContent = text;
+            msg.className = 'message ' + type;
+            setTimeout(() => {
+                msg.className = 'message';
+            }, 3000);
+        }
+
+        function showMessage(text, type) {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+            msg.className = 'message ' + type;
+            setTimeout(() => {
+                msg.className = 'message';
+            }, 3000);
+        }
+
+        async function apiRequest(endpoint, options = {}) {
+            if (authToken && !options.skipAuth) {
+                options.headers = {
+                    ...options.headers,
+                    'Authorization': 'Bearer ' + authToken
+                };
+            }
+            
+            const response = await fetch(API_BASE + endpoint, options);
+            
+            if (response.status === 401 || response.status === 403) {
+                logout();
+                throw new Error('Authentication failed');
+            }
+            
+            return response;
+        }
+
+        // Login form
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+
+            try {
+                const response = await fetch(API_BASE + '/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    authToken = data.token;
+                    currentUsername = data.username;
+                    localStorage.setItem('authToken', authToken);
+                    localStorage.setItem('username', currentUsername);
+                    showApp();
+                } else {
+                    showLoginMessage(data.error || 'Login failed', 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showLoginMessage('Login failed', 'error');
+            }
+        });
 
         async function loadData() {
             try {
                 const [commuteRes, statsRes] = await Promise.all([
-                    fetch(API_BASE + '/api/commutes'),
-                    fetch(API_BASE + '/api/stats')
+                    apiRequest('/api/commutes'),
+                    apiRequest('/api/stats')
                 ]);
 
                 const commutes = await commuteRes.json();
@@ -484,7 +690,7 @@ const HTML_TEMPLATE = `
             if (!confirm('Delete this commute entry?')) return;
 
             try {
-                const response = await fetch(API_BASE + '/api/commutes/' + id, {
+                const response = await apiRequest('/api/commutes/' + id, {
                     method: 'DELETE'
                 });
 
@@ -500,15 +706,6 @@ const HTML_TEMPLATE = `
             }
         }
 
-        function showMessage(text, type) {
-            const msg = document.getElementById('message');
-            msg.textContent = text;
-            msg.className = 'message ' + type;
-            setTimeout(() => {
-                msg.className = 'message';
-            }, 3000);
-        }
-
         document.getElementById('commute-form').addEventListener('submit', async (e) => {
             e.preventDefault();
 
@@ -517,7 +714,7 @@ const HTML_TEMPLATE = `
             const arrival = document.getElementById('arrival').value;
 
             try {
-                const response = await fetch(API_BASE + '/api/commutes', {
+                const response = await apiRequest('/api/commutes', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ date, departureTime: departure, arrivalTime: arrival })
@@ -537,12 +734,9 @@ const HTML_TEMPLATE = `
             }
         });
 
-        // Load data on page load
-        loadData();
-        
-        // Refresh every 30 seconds if page is visible
+        // Auto-refresh every 30 seconds if logged in
         setInterval(() => {
-            if (!document.hidden) {
+            if (!document.hidden && authToken) {
                 loadData();
             }
         }, 30000);
@@ -564,10 +758,104 @@ app.get('/apps/commute-tracker/', (req: Request, res: Response) => {
   res.send(HTML_TEMPLATE);
 });
 
-// Health check
+// Login endpoint
+app.post('/api/login', async (req: Request, res: Response) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      res.status(400).json({ error: 'Username and password required' });
+      return;
+    }
+
+    // Find user
+    const userSnapshot = await firestore.collection(USERS_COLLECTION)
+      .where('username', '==', username)
+      .limit(1)
+      .get();
+
+    if (userSnapshot.empty) {
+      res.status(401).json({ error: 'Invalid username or password' });
+      return;
+    }
+
+    const userDoc = userSnapshot.docs[0];
+    const user = { id: userDoc.id, ...userDoc.data() } as User;
+
+    // Verify password
+    const validPassword = await bcrypt.compare(password, user.passwordHash);
+    if (!validPassword) {
+      res.status(401).json({ error: 'Invalid username or password' });
+      return;
+    }
+
+    // Generate JWT
+    const token = jwt.sign(
+      { userId: user.id, username: user.username },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      token,
+      username: user.username,
+      userId: user.id
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+app.post('/apps/commute-tracker/api/login', async (req: Request, res: Response) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      res.status(400).json({ error: 'Username and password required' });
+      return;
+    }
+
+    const userSnapshot = await firestore.collection(USERS_COLLECTION)
+      .where('username', '==', username)
+      .limit(1)
+      .get();
+
+    if (userSnapshot.empty) {
+      res.status(401).json({ error: 'Invalid username or password' });
+      return;
+    }
+
+    const userDoc = userSnapshot.docs[0];
+    const user = { id: userDoc.id, ...userDoc.data() } as User;
+
+    const validPassword = await bcrypt.compare(password, user.passwordHash);
+    if (!validPassword) {
+      res.status(401).json({ error: 'Invalid username or password' });
+      return;
+    }
+
+    const token = jwt.sign(
+      { userId: user.id, username: user.username },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      token,
+      username: user.username,
+      userId: user.id
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Health check (no auth required)
 app.get('/api/health', async (req: Request, res: Response) => {
   try {
-    await firestore.collection(COLLECTION).limit(1).get();
+    await firestore.collection(COMMUTES_COLLECTION).limit(1).get();
     res.json({ status: 'healthy', database: 'connected' });
   } catch (error) {
     res.status(503).json({ status: 'unhealthy', error: 'Database connection failed' });
@@ -576,17 +864,18 @@ app.get('/api/health', async (req: Request, res: Response) => {
 
 app.get('/apps/commute-tracker/api/health', async (req: Request, res: Response) => {
   try {
-    await firestore.collection(COLLECTION).limit(1).get();
+    await firestore.collection(COMMUTES_COLLECTION).limit(1).get();
     res.json({ status: 'healthy', database: 'connected' });
   } catch (error) {
     res.status(503).json({ status: 'unhealthy', error: 'Database connection failed' });
   }
 });
 
-// Get all commutes
-app.get('/api/commutes', async (req: Request, res: Response) => {
+// Get all commutes for logged-in user
+app.get('/api/commutes', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const snapshot = await firestore.collection(COLLECTION)
+    const snapshot = await firestore.collection(COMMUTES_COLLECTION)
+      .where('userId', '==', req.userId)
       .orderBy('date', 'desc')
       .orderBy('departureTime', 'desc')
       .get();
@@ -603,9 +892,10 @@ app.get('/api/commutes', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/apps/commute-tracker/api/commutes', async (req: Request, res: Response) => {
+app.get('/apps/commute-tracker/api/commutes', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const snapshot = await firestore.collection(COLLECTION)
+    const snapshot = await firestore.collection(COMMUTES_COLLECTION)
+      .where('userId', '==', req.userId)
       .orderBy('date', 'desc')
       .orderBy('departureTime', 'desc')
       .get();
@@ -623,7 +913,7 @@ app.get('/apps/commute-tracker/api/commutes', async (req: Request, res: Response
 });
 
 // Create commute entry
-app.post('/api/commutes', async (req: Request, res: Response) => {
+app.post('/api/commutes', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { date, departureTime, arrivalTime } = req.body;
     
@@ -641,6 +931,7 @@ app.post('/api/commutes', async (req: Request, res: Response) => {
     }
     
     const entry: Omit<CommuteEntry, 'id'> = {
+      userId: req.userId!,
       date,
       departureTime,
       arrivalTime,
@@ -649,7 +940,7 @@ app.post('/api/commutes', async (req: Request, res: Response) => {
       createdAt: new Date().toISOString()
     };
     
-    const docRef = await firestore.collection(COLLECTION).add(entry);
+    const docRef = await firestore.collection(COMMUTES_COLLECTION).add(entry);
     
     res.status(201).json({ 
       id: docRef.id, 
@@ -662,7 +953,7 @@ app.post('/api/commutes', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/apps/commute-tracker/api/commutes', async (req: Request, res: Response) => {
+app.post('/apps/commute-tracker/api/commutes', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { date, departureTime, arrivalTime } = req.body;
     
@@ -680,6 +971,7 @@ app.post('/apps/commute-tracker/api/commutes', async (req: Request, res: Respons
     }
     
     const entry: Omit<CommuteEntry, 'id'> = {
+      userId: req.userId!,
       date,
       departureTime,
       arrivalTime,
@@ -688,7 +980,7 @@ app.post('/apps/commute-tracker/api/commutes', async (req: Request, res: Respons
       createdAt: new Date().toISOString()
     };
     
-    const docRef = await firestore.collection(COLLECTION).add(entry);
+    const docRef = await firestore.collection(COMMUTES_COLLECTION).add(entry);
     
     res.status(201).json({ 
       id: docRef.id, 
@@ -701,10 +993,23 @@ app.post('/apps/commute-tracker/api/commutes', async (req: Request, res: Respons
   }
 });
 
-// Delete commute
-app.delete('/api/commutes/:id', async (req: Request, res: Response) => {
+// Delete commute (only own commutes)
+app.delete('/api/commutes/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    await firestore.collection(COLLECTION).doc(req.params.id).delete();
+    const doc = await firestore.collection(COMMUTES_COLLECTION).doc(req.params.id).get();
+    
+    if (!doc.exists) {
+      res.status(404).json({ error: 'Commute not found' });
+      return;
+    }
+    
+    const commute = doc.data() as CommuteEntry;
+    if (commute.userId !== req.userId) {
+      res.status(403).json({ error: 'Unauthorized' });
+      return;
+    }
+    
+    await firestore.collection(COMMUTES_COLLECTION).doc(req.params.id).delete();
     res.json({ message: 'Commute deleted successfully' });
   } catch (error) {
     console.error('Error deleting commute:', error);
@@ -712,9 +1017,22 @@ app.delete('/api/commutes/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/apps/commute-tracker/api/commutes/:id', async (req: Request, res: Response) => {
+app.delete('/apps/commute-tracker/api/commutes/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    await firestore.collection(COLLECTION).doc(req.params.id).delete();
+    const doc = await firestore.collection(COMMUTES_COLLECTION).doc(req.params.id).get();
+    
+    if (!doc.exists) {
+      res.status(404).json({ error: 'Commute not found' });
+      return;
+    }
+    
+    const commute = doc.data() as CommuteEntry;
+    if (commute.userId !== req.userId) {
+      res.status(403).json({ error: 'Unauthorized' });
+      return;
+    }
+    
+    await firestore.collection(COMMUTES_COLLECTION).doc(req.params.id).delete();
     res.json({ message: 'Commute deleted successfully' });
   } catch (error) {
     console.error('Error deleting commute:', error);
@@ -722,10 +1040,13 @@ app.delete('/apps/commute-tracker/api/commutes/:id', async (req: Request, res: R
   }
 });
 
-// Get statistics and recommendations
-app.get('/api/stats', async (req: Request, res: Response) => {
+// Get statistics for logged-in user
+app.get('/api/stats', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const snapshot = await firestore.collection(COLLECTION).get();
+    const snapshot = await firestore.collection(COMMUTES_COLLECTION)
+      .where('userId', '==', req.userId)
+      .get();
+    
     const commutes: CommuteEntry[] = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
@@ -767,8 +1088,8 @@ app.get('/api/stats', async (req: Request, res: Response) => {
       const minDuration = Math.min(...dayDurations);
       const maxDuration = Math.max(...dayDurations);
       
-      // Find optimal departure time range (times that resulted in shortest commutes)
-      const threshold = minDuration + (avgDuration - minDuration) * 0.3; // Within 30% of best
+      // Find optimal departure time range
+      const threshold = minDuration + (avgDuration - minDuration) * 0.3;
       const goodCommutes = dayCommutes.filter(c => c.durationMinutes <= threshold);
       
       if (goodCommutes.length > 0) {
@@ -812,9 +1133,12 @@ app.get('/api/stats', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/apps/commute-tracker/api/stats', async (req: Request, res: Response) => {
+app.get('/apps/commute-tracker/api/stats', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const snapshot = await firestore.collection(COLLECTION).get();
+    const snapshot = await firestore.collection(COMMUTES_COLLECTION)
+      .where('userId', '==', req.userId)
+      .get();
+    
     const commutes: CommuteEntry[] = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
@@ -828,13 +1152,11 @@ app.get('/apps/commute-tracker/api/stats', async (req: Request, res: Response) =
       return;
     }
     
-    // Overall stats
     const totalDuration = commutes.reduce((sum, c) => sum + c.durationMinutes, 0);
     const avgDuration = totalDuration / commutes.length;
     const bestCommute = commutes.reduce((min, c) => 
       c.durationMinutes < min ? c.durationMinutes : min, Infinity);
     
-    // Stats by day of week
     const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const byDay: DayStats[] = weekdays.map(day => {
       const dayCommutes = commutes.filter(c => c.dayOfWeek === day);
@@ -856,8 +1178,7 @@ app.get('/apps/commute-tracker/api/stats', async (req: Request, res: Response) =
       const minDuration = Math.min(...dayDurations);
       const maxDuration = Math.max(...dayDurations);
       
-      // Find optimal departure time range (times that resulted in shortest commutes)
-      const threshold = minDuration + (avgDuration - minDuration) * 0.3; // Within 30% of best
+      const threshold = minDuration + (avgDuration - minDuration) * 0.3;
       const goodCommutes = dayCommutes.filter(c => c.durationMinutes <= threshold);
       
       if (goodCommutes.length > 0) {
@@ -906,4 +1227,3 @@ app.listen(port, () => {
   console.log(`Commute Tracker running on port ${port}`);
   console.log(`Firestore initialized`);
 });
-

@@ -4,11 +4,13 @@ Data-driven commute optimization tool. Track daily departure and arrival times t
 
 ## Features
 
+- 🔒 **Secure Authentication** - Username/password login with JWT tokens
 - 📝 **Easy Logging** - Quick form to log departure & arrival times
 - 📊 **Analytics Dashboard** - View commute statistics by day of week
 - 🎯 **Optimal Time Recommendations** - Discover the best time windows to leave
 - 📈 **Visual Charts** - Beautiful Chart.js visualizations
 - 📅 **History** - View and manage past commute entries
+- 👤 **Multi-User Support** - Each user has their own private data
 - 🔄 **Real-time Updates** - Auto-refresh every 30 seconds
 
 ## How It Works
@@ -37,13 +39,30 @@ Data-driven commute optimization tool. Track daily departure and arrival times t
 
 ## Setup
 
-### Enable Firestore
+### 1. Enable Firestore
 ```bash
 gcloud services enable firestore.googleapis.com
 gcloud firestore databases create --location=us-central1
 ```
 
-### Deploy to Cloud Run
+### 2. Create User Accounts
+
+After deploying (or during local development), create user accounts manually:
+
+```bash
+cd apps/commute-tracker
+npm install  # if not already done
+
+# Create account for your wife
+node create-user.js "wife" "password123"
+
+# Create default/guest account
+node create-user.js "guest" "guest123"
+```
+
+This stores hashed passwords securely in Firestore.
+
+### 3. Deploy to Cloud Run
 ```bash
 cd apps/commute-tracker
 
@@ -53,6 +72,8 @@ gcloud run deploy commute-tracker \
   --region us-central1 \
   --allow-unauthenticated
 ```
+
+**Important:** After deploying, create user accounts using the script above.
 
 ### Add to Firebase Hosting (Optional)
 Add to your `firebase.json`:
@@ -81,10 +102,21 @@ Visit http://localhost:8080
 
 ## Data Model
 
+### User
+```typescript
+{
+  id: string;
+  username: string;
+  passwordHash: string;  // bcrypt hashed
+  createdAt: string;
+}
+```
+
 ### Commute Entry
 ```typescript
 {
   id: string;
+  userId: string;        // Links to User.id
   date: string;          // YYYY-MM-DD
   departureTime: string; // HH:MM
   arrivalTime: string;   // HH:MM
@@ -96,12 +128,16 @@ Visit http://localhost:8080
 
 ## API Endpoints
 
-- `GET /` - HTML interface
-- `GET /api/commutes` - List all commutes
-- `POST /api/commutes` - Log new commute
-- `DELETE /api/commutes/:id` - Delete commute
-- `GET /api/stats` - Get analytics and recommendations
+### Public
+- `GET /` - HTML interface (login page)
+- `POST /api/login` - Login (returns JWT token)
 - `GET /api/health` - Health check
+
+### Authenticated (requires JWT token in Authorization header)
+- `GET /api/commutes` - List user's commutes
+- `POST /api/commutes` - Log new commute
+- `DELETE /api/commutes/:id` - Delete commute (own only)
+- `GET /api/stats` - Get user's analytics and recommendations
 
 ## Tips for Best Results
 
@@ -115,6 +151,7 @@ Visit http://localhost:8080
 
 - **Backend**: TypeScript + Express
 - **Database**: Cloud Firestore
+- **Authentication**: JWT tokens + bcrypt
 - **Visualization**: Chart.js
 - **Deployment**: Cloud Run
 - **Hosting**: Firebase (optional)
