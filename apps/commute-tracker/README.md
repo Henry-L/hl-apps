@@ -5,11 +5,12 @@ Data-driven commute optimization tool. Track daily departure and arrival times t
 ## Features
 
 - 🔒 **Secure Authentication** - Username/password login with JWT tokens
-- 📝 **Easy Logging** - Quick form to log departure & arrival times
+- 🌦️ **Weather Tracking** - Auto-detects current weather in Medford, MA (02155)
+- 📝 **Easy Logging** - Quick form to log departure & arrival times with weather
 - 📊 **Analytics Dashboard** - View commute statistics by day of week
 - 🎯 **Optimal Time Recommendations** - Discover the best time windows to leave
 - 📈 **Visual Charts** - Beautiful Chart.js visualizations
-- 📅 **History** - View and manage past commute entries
+- 📅 **History** - View and manage past commute entries with weather icons
 - 👤 **Multi-User Support** - Each user has their own private data
 - 🔄 **Real-time Updates** - Auto-refresh every 30 seconds
 
@@ -122,6 +123,7 @@ Visit http://localhost:8080
   arrivalTime: string;   // HH:MM
   durationMinutes: number;
   dayOfWeek: string;     // Monday, Tuesday, etc.
+  weather?: WeatherCondition; // 'clear' | 'cloudy' | 'rain' | 'snow' | 'fog' | 'storm' | 'other'
   createdAt: string;     // ISO timestamp
 }
 ```
@@ -134,8 +136,9 @@ Visit http://localhost:8080
 - `GET /api/health` - Health check
 
 ### Authenticated (requires JWT token in Authorization header)
+- `GET /api/weather` - Get current weather for Medford, MA
 - `GET /api/commutes` - List user's commutes
-- `POST /api/commutes` - Log new commute
+- `POST /api/commutes` - Log new commute (includes weather)
 - `DELETE /api/commutes/:id` - Delete commute (own only)
 - `GET /api/stats` - Get user's analytics and recommendations
 

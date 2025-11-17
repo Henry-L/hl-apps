@@ -31,6 +31,8 @@ interface User {
   createdAt: string;
 }
 
+type WeatherCondition = 'clear' | 'cloudy' | 'rain' | 'snow' | 'fog' | 'storm' | 'other';
+
 interface CommuteEntry {
   id?: string;
   userId: string;
@@ -39,6 +41,7 @@ interface CommuteEntry {
   arrivalTime: string; // HH:MM
   durationMinutes: number;
   dayOfWeek: string; // Monday, Tuesday, etc.
+  weather?: WeatherCondition;
   createdAt: string;
 }
 
@@ -106,6 +109,88 @@ function authenticateToken(req: AuthRequest, res: Response, next: NextFunction) 
     next();
   });
 }
+
+// Weather API endpoint (using wttr.in - no API key needed!)
+app.get('/api/weather', async (req: Request, res: Response) => {
+  try {
+    // Using wttr.in for Medford, MA - simple and free, no API key
+    const response = await fetch('https://wttr.in/Medford,MA?format=j1');
+    const data: any = await response.json();
+    
+    if (data && data.current_condition && data.current_condition[0]) {
+      const condition = data.current_condition[0];
+      const weatherCode = parseInt(condition.weatherCode);
+      const weatherDesc = condition.weatherDesc[0].value.toLowerCase();
+      
+      // Map weather codes to our categories
+      let category: WeatherCondition = 'other';
+      
+      if (weatherCode === 113) {
+        category = 'clear';
+      } else if ([116, 119, 122].includes(weatherCode)) {
+        category = 'cloudy';
+      } else if ([143, 248, 260].includes(weatherCode)) {
+        category = 'fog';
+      } else if ([176, 263, 266, 281, 284, 293, 296, 299, 302, 305, 308, 311, 314, 317, 353, 356, 359, 362, 365].includes(weatherCode)) {
+        category = 'rain';
+      } else if ([179, 182, 185, 227, 230, 323, 326, 329, 332, 335, 338, 350, 368, 371, 374, 377].includes(weatherCode)) {
+        category = 'snow';
+      } else if ([200, 386, 389, 392, 395].includes(weatherCode)) {
+        category = 'storm';
+      }
+      
+      res.json({
+        condition: category,
+        description: condition.weatherDesc[0].value,
+        temp: condition.temp_F + '°F'
+      });
+    } else {
+      res.json({ condition: 'other', description: 'Unknown', temp: '--' });
+    }
+  } catch (error) {
+    console.error('Weather fetch error:', error);
+    res.json({ condition: 'other', description: 'Unable to fetch', temp: '--' });
+  }
+});
+
+app.get('/apps/commute-tracker/api/weather', async (req: Request, res: Response) => {
+  try {
+    const response = await fetch('https://wttr.in/Medford,MA?format=j1');
+    const data: any = await response.json();
+    
+    if (data && data.current_condition && data.current_condition[0]) {
+      const condition = data.current_condition[0];
+      const weatherCode = parseInt(condition.weatherCode);
+      
+      let category: WeatherCondition = 'other';
+      
+      if (weatherCode === 113) {
+        category = 'clear';
+      } else if ([116, 119, 122].includes(weatherCode)) {
+        category = 'cloudy';
+      } else if ([143, 248, 260].includes(weatherCode)) {
+        category = 'fog';
+      } else if ([176, 263, 266, 281, 284, 293, 296, 299, 302, 305, 308, 311, 314, 317, 353, 356, 359, 362, 365].includes(weatherCode)) {
+        category = 'rain';
+      } else if ([179, 182, 185, 227, 230, 323, 326, 329, 332, 335, 338, 350, 368, 371, 374, 377].includes(weatherCode)) {
+        category = 'snow';
+      } else if ([200, 386, 389, 392, 395].includes(weatherCode)) {
+        category = 'storm';
+      }
+      
+      res.json({
+        condition: category,
+        description: condition.weatherDesc[0].value,
+        temp: condition.temp_F + '°F'
+      });
+    } else {
+      res.json({ condition: 'other', description: 'Unknown', temp: '--' });
+    }
+  } catch (error) {
+    console.error('Weather fetch error:', error);
+    res.json({ condition: 'other', description: 'Unable to fetch', temp: '--' });
+  }
+});
 
 // HTML Template with Login
 const HTML_TEMPLATE = `
@@ -326,11 +411,43 @@ const HTML_TEMPLATE = `
             color: #4f46e5;
             font-weight: 600;
         }
+        .history-weather {
+            font-size: 1.5em;
+            margin-left: 10px;
+        }
         .delete-btn {
             background: #ef4444;
             padding: 8px 16px;
             font-size: 0.9em;
             width: auto;
+        }
+        .weather-display {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .weather-icon {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+        .weather-text {
+            color: #78350f;
+            font-weight: 600;
+        }
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 1em;
+            transition: border-color 0.2s;
+            background: white;
+        }
+        select:focus {
+            outline: none;
+            border-color: #4f46e5;
         }
         .message {
             padding: 15px;
@@ -395,6 +512,10 @@ const HTML_TEMPLATE = `
         <div class="cards">
             <div class="card">
                 <h2>Log Today's Commute</h2>
+                <div class="weather-display" id="current-weather">
+                    <div class="weather-icon">☁️</div>
+                    <div class="weather-text">Loading weather...</div>
+                </div>
                 <form id="commute-form">
                     <div class="form-group">
                         <label for="date">Date</label>
@@ -407,6 +528,12 @@ const HTML_TEMPLATE = `
                     <div class="form-group">
                         <label for="arrival">Time Arrived at Work</label>
                         <input type="time" id="arrival" name="arrival" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="weather">Weather Conditions</label>
+                        <select id="weather" name="weather" required>
+                            <option value="">Loading...</option>
+                        </select>
                     </div>
                     <button type="submit">Log Commute</button>
                 </form>
@@ -459,6 +586,27 @@ const HTML_TEMPLATE = `
         let weekChart = null;
         let authToken = localStorage.getItem('authToken');
         let currentUsername = localStorage.getItem('username');
+        let currentWeather = 'other';
+
+        const WEATHER_ICONS = {
+            'clear': '☀️',
+            'cloudy': '☁️',
+            'rain': '🌧️',
+            'snow': '❄️',
+            'fog': '🌫️',
+            'storm': '⛈️',
+            'other': '🌤️'
+        };
+
+        const WEATHER_LABELS = {
+            'clear': 'Clear',
+            'cloudy': 'Cloudy',
+            'rain': 'Rain',
+            'snow': 'Snow',
+            'fog': 'Fog',
+            'storm': 'Storm',
+            'other': 'Other'
+        };
 
         // Check if already logged in
         if (authToken) {
@@ -475,7 +623,36 @@ const HTML_TEMPLATE = `
             document.getElementById('app-container').style.display = 'block';
             document.getElementById('current-username').textContent = currentUsername || 'User';
             document.getElementById('date').valueAsDate = new Date();
+            loadWeather();
             loadData();
+        }
+
+        async function loadWeather() {
+            try {
+                const response = await fetch(API_BASE + '/api/weather');
+                const data = await response.json();
+                
+                currentWeather = data.condition || 'other';
+                
+                // Update weather display
+                const weatherDisplay = document.getElementById('current-weather');
+                weatherDisplay.innerHTML = \`
+                    <div class="weather-icon">\${WEATHER_ICONS[currentWeather]}</div>
+                    <div class="weather-text">\${data.description} • \${data.temp}</div>
+                \`;
+                
+                // Populate weather dropdown
+                const weatherSelect = document.getElementById('weather');
+                weatherSelect.innerHTML = Object.keys(WEATHER_LABELS).map(key => 
+                    \`<option value="\${key}" \${key === currentWeather ? 'selected' : ''}>\${WEATHER_ICONS[key]} \${WEATHER_LABELS[key]}</option>\`
+                ).join('');
+            } catch (error) {
+                console.error('Error loading weather:', error);
+                const weatherSelect = document.getElementById('weather');
+                weatherSelect.innerHTML = Object.keys(WEATHER_LABELS).map(key => 
+                    \`<option value="\${key}">\${WEATHER_ICONS[key]} \${WEATHER_LABELS[key]}</option>\`
+                ).join('');
+            }
         }
 
         function logout() {
@@ -675,7 +852,7 @@ const HTML_TEMPLATE = `
             const html = commutes.slice(0, 10).map(c => \`
                 <div class="history-item">
                     <div>
-                        <div class="history-date">\${c.date} (\${c.dayOfWeek})</div>
+                        <div class="history-date">\${c.date} (\${c.dayOfWeek}) <span class="history-weather">\${WEATHER_ICONS[c.weather || 'other']}</span></div>
                         <div class="history-times">\${c.departureTime} → \${c.arrivalTime}</div>
                     </div>
                     <div class="history-duration">\${c.durationMinutes} min</div>
@@ -712,18 +889,25 @@ const HTML_TEMPLATE = `
             const date = document.getElementById('date').value;
             const departure = document.getElementById('departure').value;
             const arrival = document.getElementById('arrival').value;
+            const weather = document.getElementById('weather').value;
 
             try {
                 const response = await apiRequest('/api/commutes', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ date, departureTime: departure, arrivalTime: arrival })
+                    body: JSON.stringify({ 
+                        date, 
+                        departureTime: departure, 
+                        arrivalTime: arrival,
+                        weather: weather 
+                    })
                 });
 
                 if (response.ok) {
                     showMessage('Commute logged successfully! 🎉', 'success');
                     document.getElementById('commute-form').reset();
                     document.getElementById('date').valueAsDate = new Date();
+                    loadWeather(); // Refresh weather for next entry
                     loadData();
                 } else {
                     showMessage('Error logging commute', 'error');
@@ -915,7 +1099,7 @@ app.get('/apps/commute-tracker/api/commutes', authenticateToken, async (req: Aut
 // Create commute entry
 app.post('/api/commutes', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { date, departureTime, arrivalTime } = req.body;
+    const { date, departureTime, arrivalTime, weather } = req.body;
     
     if (!date || !departureTime || !arrivalTime) {
       res.status(400).json({ error: 'Date, departure time, and arrival time are required' });
@@ -937,6 +1121,7 @@ app.post('/api/commutes', authenticateToken, async (req: AuthRequest, res: Respo
       arrivalTime,
       durationMinutes,
       dayOfWeek,
+      weather: weather as WeatherCondition || 'other',
       createdAt: new Date().toISOString()
     };
     
@@ -955,7 +1140,7 @@ app.post('/api/commutes', authenticateToken, async (req: AuthRequest, res: Respo
 
 app.post('/apps/commute-tracker/api/commutes', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { date, departureTime, arrivalTime } = req.body;
+    const { date, departureTime, arrivalTime, weather } = req.body;
     
     if (!date || !departureTime || !arrivalTime) {
       res.status(400).json({ error: 'Date, departure time, and arrival time are required' });
@@ -977,6 +1162,7 @@ app.post('/apps/commute-tracker/api/commutes', authenticateToken, async (req: Au
       arrivalTime,
       durationMinutes,
       dayOfWeek,
+      weather: weather as WeatherCondition || 'other',
       createdAt: new Date().toISOString()
     };
     
