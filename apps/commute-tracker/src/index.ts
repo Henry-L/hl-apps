@@ -1060,8 +1060,7 @@ app.get('/api/commutes', authenticateToken, async (req: AuthRequest, res: Respon
   try {
     const snapshot = await firestore.collection(COMMUTES_COLLECTION)
       .where('userId', '==', req.userId)
-      .orderBy('date', 'desc')
-      .orderBy('departureTime', 'desc')
+      .orderBy('createdAt', 'desc')
       .get();
     
     const commutes = snapshot.docs.map(doc => ({
@@ -1080,8 +1079,7 @@ app.get('/apps/commute-tracker/api/commutes', authenticateToken, async (req: Aut
   try {
     const snapshot = await firestore.collection(COMMUTES_COLLECTION)
       .where('userId', '==', req.userId)
-      .orderBy('date', 'desc')
-      .orderBy('departureTime', 'desc')
+      .orderBy('createdAt', 'desc')
       .get();
     
     const commutes = snapshot.docs.map(doc => ({
