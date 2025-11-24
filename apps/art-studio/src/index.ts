@@ -1,14 +1,8 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import { VertexAI } from '@google-cloud/vertexai';
 
 const app = express();
 const port = process.env.PORT || 8080;
-const projectId = process.env.GCP_PROJECT || 'hl-apps';
-const location = 'us-central1';
-
-// Initialize Vertex AI (for Gemini prompt optimization only)
-const vertexAI = new VertexAI({ project: projectId, location });
 
 // Stability AI API Key (from environment variable or Secret Manager)
 const STABILITY_API_KEY = process.env.STABILITY_API_KEY || '';
@@ -313,7 +307,7 @@ const HTML_TEMPLATE = `
     <div class="container">
         <div class="header">
             <h1>🎨 Art Studio</h1>
-            <p class="subtitle">AI-Powered Wall Art Generator • Stability AI + Gemini • Optimized for Print</p>
+            <p class="subtitle">AI-Powered Wall Art Generator • Stability AI • Free Prompt Enhancement • Optimized for Print</p>
         </div>
 
         <div class="main-grid">
@@ -392,8 +386,8 @@ const HTML_TEMPLATE = `
                 <div id="loading" class="loading hidden">
                     <div class="spinner"></div>
                     <p style="color: #667eea; font-weight: 600; margin-bottom: 10px;">Creating your masterpiece...</p>
-                    <p style="color: #64748b; font-size: 0.9em;">Step 1: Optimizing prompt with Gemini</p>
-                    <p id="loading-step" style="color: #64748b; font-size: 0.9em; margin-top: 5px;">Step 2: Generating with Stability AI</p>
+                    <p style="color: #64748b; font-size: 0.9em;">Enhancing prompt & generating with Stability AI...</p>
+                    <p id="loading-step" style="color: #64748b; font-size: 0.9em; margin-top: 5px;">This takes about 10-15 seconds ⏳</p>
                 </div>
 
                 <div id="result" class="hidden">
@@ -566,6 +560,17 @@ app.get('/apps/art-studio/api/health', async (req: Request, res: Response) => {
   res.json({ status: 'healthy' });
 });
 
+// Helper function to enhance prompts locally (free alternative to Gemini)
+function enhancePrompt(userPrompt: string, printSize: any): string {
+  const printContext = `${printSize.width}x${printSize.height} inch print`;
+  const qualityTerms = 'ultra high resolution, 8K quality, print-ready, professional photography';
+  
+  // Enhance the prompt by adding quality terms
+  const enhanced = `${userPrompt}, ${qualityTerms}, perfect for wall art and ${printContext}, gallery quality, highly detailed, sharp focus, vibrant colors, masterpiece`;
+  
+  return enhanced;
+}
+
 // Generate artwork
 app.post('/api/generate', async (req: Request, res: Response) => {
   try {
@@ -582,29 +587,9 @@ app.post('/api/generate', async (req: Request, res: Response) => {
       return;
     }
 
-    // Step 1: Optimize the prompt using Gemini
-    console.log('Optimizing prompt with Gemini...');
-    const generativeModel = vertexAI.getGenerativeModel({
-      model: 'gemini-1.5-flash'
-    });
-
-    const optimizationPrompt = `You are an expert at creating detailed, high-quality prompts for AI art generation. 
-Your task is to enhance the user's prompt to create stunning wall art suitable for printing at ${printSize.width}x${printSize.height} inches.
-
-User's prompt: "${prompt}"
-
-Please enhance this prompt by:
-1. Adding specific artistic details (style, mood, lighting, colors)
-2. Mentioning high resolution and print quality
-3. Keeping it concise but descriptive (under 200 words)
-4. Optimizing for the ${printSize.aspectRatio} aspect ratio
-5. Making it suitable for wall art/poster display
-
-Return ONLY the enhanced prompt, nothing else. No explanations, no quotes, just the optimized prompt text.`;
-
-    const result = await generativeModel.generateContent(optimizationPrompt);
-    const enhancedPrompt = result.response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || prompt;
-
+    // Step 1: Enhance the prompt (free, no API needed - no Gemini!)
+    console.log('Enhancing prompt locally...');
+    const enhancedPrompt = enhancePrompt(prompt, printSize);
     console.log('Enhanced prompt:', enhancedPrompt);
 
     // Step 2: Generate image using Stability AI
@@ -620,7 +605,7 @@ Return ONLY the enhanced prompt, nothing else. No explanations, no quotes, just 
     else if (printSize.aspectRatio === '3:4') aspectRatio = '3:4';
     else if (printSize.aspectRatio === '2:3') aspectRatio = '2:3';
     else if (printSize.aspectRatio === '1:1') aspectRatio = '1:1';
-
+    
     // Call Stability AI API
     const formData = new FormData();
     formData.append('prompt', enhancedPrompt);
@@ -680,29 +665,10 @@ app.post('/apps/art-studio/api/generate', async (req: Request, res: Response) =>
       return;
     }
 
-    console.log('Optimizing prompt with Gemini...');
-    const generativeModel = vertexAI.getGenerativeModel({
-      model: 'gemini-1.5-flash'
-    });
-
-    const optimizationPrompt = `You are an expert at creating detailed, high-quality prompts for AI art generation. 
-Your task is to enhance the user's prompt to create stunning wall art suitable for printing at ${printSize.width}x${printSize.height} inches.
-
-User's prompt: "${prompt}"
-
-Please enhance this prompt by:
-1. Adding specific artistic details (style, mood, lighting, colors)
-2. Mentioning high resolution and print quality
-3. Keeping it concise but descriptive (under 200 words)
-4. Optimizing for the ${printSize.aspectRatio} aspect ratio
-5. Making it suitable for wall art/poster display
-
-Return ONLY the enhanced prompt, nothing else. No explanations, no quotes, just the optimized prompt text.`;
-
-    const result = await generativeModel.generateContent(optimizationPrompt);
-    const enhancedPrompt = result.response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || prompt;
-
+    console.log('Enhancing prompt locally...');
+    const enhancedPrompt = enhancePrompt(prompt, printSize);
     console.log('Enhanced prompt:', enhancedPrompt);
+
     console.log('Generating image with Stability AI...');
     
     if (!STABILITY_API_KEY) {
@@ -714,7 +680,7 @@ Return ONLY the enhanced prompt, nothing else. No explanations, no quotes, just 
     else if (printSize.aspectRatio === '3:4') aspectRatio = '3:4';
     else if (printSize.aspectRatio === '2:3') aspectRatio = '2:3';
     else if (printSize.aspectRatio === '1:1') aspectRatio = '1:1';
-
+    
     const formData = new FormData();
     formData.append('prompt', enhancedPrompt);
     formData.append('output_format', 'png');
@@ -760,6 +726,12 @@ Return ONLY the enhanced prompt, nothing else. No explanations, no quotes, just 
 // Start server
 app.listen(port, () => {
   console.log(`Art Studio running on port ${port}`);
-  console.log(`Project: ${projectId}, Location: ${location}`);
+  console.log(`Using Stability AI for image generation`);
+  console.log(`Using free local prompt enhancement (no Gemini costs!)`);
+  if (STABILITY_API_KEY) {
+    console.log('Stability API Key: Configured ✓');
+  } else {
+    console.log('WARNING: Stability API Key not configured');
+  }
 });
 

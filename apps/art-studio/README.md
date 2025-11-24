@@ -1,15 +1,16 @@
 # Art Studio
 
-AI-powered wall art generator using Gemini for prompt optimization and Stability AI for image generation. Optimized for print sizes.
+AI-powered wall art generator using **free local prompt enhancement** + **Stability AI** image generation. Uses your Stability credits (no Gemini costs!). Optimized for print sizes.
 
 ## Features
 
 - 🎨 **AI Image Generation** - Powered by Stability AI SD3
-- ✨ **Prompt Optimization** - Gemini enhances your prompts for better results
+- ✨ **Free Prompt Enhancement** - Automatically optimizes your prompts (no Gemini costs!)
 - 📐 **Print-Optimized** - Choose from standard frame sizes (8x10, 16x20, 24x36, etc.)
 - ⬇️ **Download Ready** - High-resolution PNG files ready for printing
 - 🎯 **Aspect Ratio Matching** - Automatically optimizes for your chosen print size
 - 🖼️ **Beautiful UI** - Simple, elegant interface for creating wall art
+- ⚡ **Fast Generation** - ~10-15 seconds per image with Stability AI
 
 ## Print Sizes
 
@@ -41,14 +42,7 @@ echo -n "sk-YOUR-STABILITY-API-KEY-HERE" | \
   gcloud secrets create stability-api-key --data-file=-
 ```
 
-### 3. Enable Required APIs
-
-```bash
-# Enable Vertex AI for Gemini
-gcloud services enable aiplatform.googleapis.com
-```
-
-### 4. Deploy to Cloud Run
+### 3. Deploy to Cloud Run
 
 ```bash
 cd apps/art-studio
@@ -61,7 +55,7 @@ gcloud run deploy art-studio \
   --set-secrets="STABILITY_API_KEY=stability-api-key:latest"
 ```
 
-### 5. Add to Firebase Hosting (Optional)
+### Add to Firebase Hosting (Optional)
 
 Add to your `firebase.json`:
 
@@ -84,12 +78,8 @@ Add to your `firebase.json`:
 # Install dependencies
 npm install
 
-# Set environment variables
+# Set environment variable
 export STABILITY_API_KEY="sk-your-key-here"
-export GCP_PROJECT="your-project-id"
-
-# Authenticate for Gemini
-gcloud auth application-default login
 
 # Run dev server
 npm run dev
@@ -102,43 +92,44 @@ Visit http://localhost:8080
 ### 1. User Input
 User enters a simple prompt like "mountain landscape at sunset"
 
-### 2. Prompt Optimization (Gemini)
-Gemini enhances the prompt with:
-- Artistic details (style, mood, lighting)
-- Print quality specifications
-- Aspect ratio optimization
-- Wall art suitability
+### 2. Prompt Enhancement (Free - No Gemini!)
+App automatically enhances the prompt locally with:
+- Artistic quality terms
+- Print optimization keywords
+- High resolution specifications
+- Wall art context
 
-Example output:
-> "A breathtaking mountain landscape at golden hour sunset, dramatic peaks silhouetted against vibrant orange and pink skies, serene alpine lake reflecting the colors, professional photography style, ultra high resolution 8K quality, suitable for large format wall art print, rich color depth, sharp focus throughout"
+Example enhancement:
+> "mountain landscape at sunset, ultra high resolution, 8K quality, print-ready, professional photography, perfect for wall art and 16x20 inch print, gallery quality, highly detailed, sharp focus, vibrant colors, masterpiece"
 
 ### 3. Image Generation (Stability AI)
 Enhanced prompt sent to Stability AI SD3:
-- Generates high-quality image
+- Generates high-quality images
 - Matches selected aspect ratio
 - Returns PNG for download
+- Takes ~10-15 seconds
 
 ### 4. Download
 User downloads print-ready image file
 
 ## Cost
 
-### Gemini (Prompt Optimization)
-- **~$0.00001 per request** (virtually free)
-- Falls within GCP free tier
+### Prompt Enhancement: **$0.00** 🎉
+- Local prompt enhancement (no Gemini!)
+- No API calls for optimization
+- Completely free
 
-### Stability AI (Image Generation)
-Depends on your Stability AI credits/plan:
+### Image Generation: Stability AI Credits
+- Uses your existing Stability AI credits
 - **SD3**: ~$0.065 per image
 - **SD3 Turbo**: ~$0.04 per image (faster)
-- Or use your existing credits! 🎉
 
 ### Example Monthly Cost (25 images)
-- Gemini: ~$0.00
+- Prompt Enhancement: $0.00 (local, no Gemini!)
 - Stability: 25 × $0.065 = ~$1.63
 - **Total: ~$1.63/month**
 
-With existing credits: essentially free until credits run out!
+With your existing Stability credits: **free until credits run out!**
 
 ## API Endpoints
 
@@ -168,11 +159,10 @@ With existing credits: essentially free until credits run out!
 ## Technology Stack
 
 - **Backend**: TypeScript + Express
-- **AI Models**: 
-  - Gemini 1.5 Flash (prompt optimization)
-  - Stability AI SD3 (image generation)
+- **Prompt Enhancement**: Local (free, no Gemini costs!)
+- **Image Generation**: Stability AI SD3
 - **Deployment**: Cloud Run
-- **Secrets**: Secret Manager
+- **Secrets**: Secret Manager (for Stability API key only)
 
 ## Troubleshooting
 
@@ -182,14 +172,19 @@ With existing credits: essentially free until credits run out!
 - For local dev: export STABILITY_API_KEY environment variable
 
 ### Image generation fails
-- Check Stability AI credits/balance
+- Check Stability AI credits/balance at https://platform.stability.ai
 - Verify API key is valid
 - Check Cloud Run logs for detailed error
 
 ### Slow generation
-- SD3 takes ~10-20 seconds per image
+- SD3 takes ~10-15 seconds per image
 - Use SD3 Turbo for faster results (change model in code)
 - This is normal for high-quality image generation
+
+### Image quality issues
+- Try being more descriptive in your prompt
+- Mention specific art styles
+- The local enhancement already adds quality keywords, so focus on the subject/style
 
 ## Future Enhancements
 
