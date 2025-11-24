@@ -6,7 +6,8 @@ Henry's app-a-day challenge - vibe-coding and deploying apps daily to Cloud Run.
 
 - **test-app** - Simple Flask-based Cloud Run service with HTML interface
 - **db-test** - TypeScript/Express service with Firestore database integration
-- **commute-tracker** - Data-driven commute optimization tool with analytics
+- **commute-tracker** - Data-driven commute optimization tool with analytics and weather tracking
+- **art-studio** - AI-powered wall art generator using Gemini + Stability AI
 
 ## Structure
 
