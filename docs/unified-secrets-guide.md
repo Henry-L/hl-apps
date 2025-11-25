@@ -4,42 +4,32 @@ Instead of creating separate secrets for each API key, use a single JSON secret 
 
 ## Setup
 
-### 1. Create your secrets JSON file
-
-Create a file called `secrets.json` (NOT committed to git):
-
-```json
-{
-  "stability_api_key": "sk-your-actual-stability-key",
-  "jwt_secret": "your-super-secret-jwt-key-min-32-chars",
-  "openai_api_key": "sk-your-openai-key-if-needed",
-  "other_service_key": "add-more-as-needed"
-}
-```
-
-### 2. Create the secret in GCP Secret Manager
+### 1. Create the secret in GCP (with dummy values)
 
 ```bash
 # Enable Secret Manager API (if not already enabled)
 gcloud services enable secretmanager.googleapis.com
 
-# Create the unified secret from your JSON file
-gcloud secrets create app-secrets \
-  --data-file=secrets.json
-
-# Or create it from stdin:
-cat secrets.json | gcloud secrets create app-secrets --data-file=-
+# Create a dummy JSON secret (edit through console later)
+echo '{"stability_api_key":"REPLACE_ME","jwt_secret":"REPLACE_ME"}' | \
+  gcloud secrets create app-secrets --data-file=-
 ```
 
-### 3. Update an existing secret
+### 2. Edit the secret through GCP Console
 
-```bash
-# Add a new version to the secret
-gcloud secrets versions add app-secrets \
-  --data-file=secrets.json
-```
+1. Go to https://console.cloud.google.com/security/secret-manager
+2. Click on `app-secrets`
+3. Click "NEW VERSION"
+4. Replace the JSON with your actual values:
+   ```json
+   {
+     "stability_api_key": "sk-your-actual-key",
+     "jwt_secret": "your-super-secret-jwt-key-min-32-chars"
+   }
+   ```
+5. Click "ADD NEW VERSION"
 
-### 4. View the secret (for debugging)
+### 3. View the secret (for debugging)
 
 ```bash
 # List all secrets
@@ -50,6 +40,20 @@ gcloud secrets versions access latest --secret=app-secrets
 
 # Get a specific version
 gcloud secrets versions access 1 --secret=app-secrets
+```
+
+### 4. Update the secret later (via console or CLI)
+
+**Via Console:** Repeat step 2 above
+
+**Via CLI:**
+```bash
+# From a file
+gcloud secrets versions add app-secrets --data-file=secrets.json
+
+# Or from stdin
+echo '{"stability_api_key":"new-key","jwt_secret":"new-secret"}' | \
+  gcloud secrets versions add app-secrets --data-file=-
 ```
 
 ## Using in Cloud Run
@@ -130,15 +134,21 @@ const secrets = process.env.APP_SECRETS
    - `app-secrets-prod`
    - `app-secrets-dev`
 
-## Adding a New Secret
+## Adding a New Secret Key
 
-1. Edit your local `secrets.json` file
-2. Add the new key-value pair
-3. Update the secret in GCP:
-   ```bash
-   gcloud secrets versions add app-secrets --data-file=secrets.json
+1. Go to https://console.cloud.google.com/security/secret-manager
+2. Click on `app-secrets`
+3. Click "NEW VERSION"
+4. Copy the existing JSON, add your new key-value pair:
+   ```json
+   {
+     "stability_api_key": "sk-...",
+     "jwt_secret": "...",
+     "new_key_here": "new-value-here"
+   }
    ```
-4. Redeploy your apps (or they'll auto-pick up the new version on restart)
+5. Click "ADD NEW VERSION"
+6. Redeploy your apps (or they'll auto-pick up the new version on restart)
 
 ## Granting Access to Service Accounts
 
