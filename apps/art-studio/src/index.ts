@@ -527,6 +527,7 @@ const HTML_TEMPLATE = `
 
             const prompt = document.getElementById('prompt').value;
             const size = selectedSize;
+            const style = document.getElementById('style').value;
 
             // Show loading
             document.getElementById('placeholder').classList.add('hidden');
@@ -539,7 +540,7 @@ const HTML_TEMPLATE = `
                 const response = await fetch(API_BASE + '/api/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt, size })
+                    body: JSON.stringify({ prompt, size, style })
                 });
 
                 const data = await response.json();
