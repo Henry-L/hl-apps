@@ -401,6 +401,21 @@ const HTML_TEMPLATE = `
                     </div>
 
                     <div class="form-group">
+                        <label for="style">Art Style</label>
+                        <select id="style" name="style" required>
+                            <option value="photorealistic">📸 Photorealistic - Professional photography</option>
+                            <option value="digital-art" selected>🎨 Digital Art - Modern illustration</option>
+                            <option value="abstract">🌈 Abstract - Artistic interpretation</option>
+                            <option value="watercolor">💧 Watercolor - Soft painting style</option>
+                            <option value="cartoon">🎭 Cartoon - Fun animated style</option>
+                            <option value="minimalist">⚪ Minimalist - Clean and simple</option>
+                            <option value="vintage">📻 Vintage - Retro aesthetic</option>
+                            <option value="oil-painting">🖼️ Oil Painting - Classic art</option>
+                        </select>
+                        <small style="color: #64748b;">Choose the artistic style for your wall art</small>
+                    </div>
+
+                    <div class="form-group">
                         <label>Choose Print Size</label>
                         <div class="size-grid">
                             <div class="size-option" data-size="8x10">
