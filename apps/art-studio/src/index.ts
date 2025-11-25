@@ -33,6 +33,50 @@ const PRINT_SIZES = {
   'square': { width: 20, height: 20, aspectRatio: '1:1', displayRatio: '1:1' }
 };
 
+// Art styles
+const ART_STYLES = {
+  'photorealistic': {
+    name: 'Photorealistic',
+    description: 'Professional photography, ultra-realistic',
+    prompt: 'professional photography, ultra high resolution, photorealistic, detailed textures, natural lighting'
+  },
+  'digital-art': {
+    name: 'Digital Art',
+    description: 'Modern digital illustration',
+    prompt: 'digital art, modern illustration, vibrant colors, clean lines, professional digital painting'
+  },
+  'abstract': {
+    name: 'Abstract',
+    description: 'Abstract and artistic interpretation',
+    prompt: 'abstract art, artistic interpretation, bold colors, creative composition, contemporary art style'
+  },
+  'watercolor': {
+    name: 'Watercolor',
+    description: 'Soft watercolor painting style',
+    prompt: 'watercolor painting, soft edges, flowing colors, artistic, hand-painted aesthetic, gentle textures'
+  },
+  'cartoon': {
+    name: 'Cartoon',
+    description: 'Fun cartoon/animated style',
+    prompt: 'cartoon style, animated, playful, bold outlines, vibrant colors, illustrated art'
+  },
+  'minimalist': {
+    name: 'Minimalist',
+    description: 'Clean and simple design',
+    prompt: 'minimalist design, clean lines, simple composition, elegant, modern aesthetic, less is more'
+  },
+  'vintage': {
+    name: 'Vintage',
+    description: 'Retro and nostalgic feel',
+    prompt: 'vintage style, retro aesthetic, nostalgic, aged colors, classic composition, timeless art'
+  },
+  'oil-painting': {
+    name: 'Oil Painting',
+    description: 'Classic oil painting look',
+    prompt: 'oil painting, classic art style, rich textures, painterly strokes, gallery quality, traditional medium'
+  }
+};
+
 // HTML Template
 const HTML_TEMPLATE = `
 <!DOCTYPE html>
@@ -572,12 +616,16 @@ app.get('/apps/art-studio/api/health', async (req: Request, res: Response) => {
 });
 
 // Helper function to enhance prompts locally (free alternative to Gemini)
-function enhancePrompt(userPrompt: string, printSize: any): string {
+function enhancePrompt(userPrompt: string, printSize: any, style: string): string {
   const printContext = `${printSize.width}x${printSize.height} inch print`;
-  const qualityTerms = 'ultra high resolution, 8K quality, print-ready, professional photography';
+  const baseQuality = '8K quality, print-ready';
   
-  // Enhance the prompt by adding quality terms
-  const enhanced = `${userPrompt}, ${qualityTerms}, perfect for wall art and ${printContext}, gallery quality, highly detailed, sharp focus, vibrant colors, masterpiece`;
+  // Get style-specific prompt additions
+  const styleInfo = ART_STYLES[style as keyof typeof ART_STYLES] || ART_STYLES['digital-art'];
+  const stylePrompt = styleInfo.prompt;
+  
+  // Enhance the prompt by adding style and quality terms
+  const enhanced = `${userPrompt}, ${stylePrompt}, ${baseQuality}, perfect for wall art and ${printContext}, gallery quality, highly detailed`;
   
   return enhanced;
 }
@@ -585,7 +633,7 @@ function enhancePrompt(userPrompt: string, printSize: any): string {
 // Generate artwork
 app.post('/api/generate', async (req: Request, res: Response) => {
   try {
-    const { prompt, size } = req.body;
+    const { prompt, size, style = 'digital-art' } = req.body;
 
     if (!prompt || !size) {
       res.status(400).json({ error: 'Prompt and size are required' });
@@ -598,9 +646,12 @@ app.post('/api/generate', async (req: Request, res: Response) => {
       return;
     }
 
+    // Validate style
+    const selectedStyle = ART_STYLES[style as keyof typeof ART_STYLES] || ART_STYLES['digital-art'];
+
     // Step 1: Enhance the prompt (free, no API needed - no Gemini!)
-    console.log('Enhancing prompt locally...');
-    const enhancedPrompt = enhancePrompt(prompt, printSize);
+    console.log('Enhancing prompt locally with style:', selectedStyle.name);
+    const enhancedPrompt = enhancePrompt(prompt, printSize, style);
     console.log('Enhanced prompt:', enhancedPrompt);
 
     // Step 2: Generate image using Stability AI
