@@ -23,13 +23,14 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Print sizes (width x height in inches)
+// Note: aspectRatio is mapped to Stability AI's supported ratios
 const PRINT_SIZES = {
-  '8x10': { width: 8, height: 10, aspectRatio: '4:5' },
-  '11x14': { width: 11, height: 14, aspectRatio: '11:14' },
-  '16x20': { width: 16, height: 20, aspectRatio: '4:5' },
-  '18x24': { width: 18, height: 24, aspectRatio: '3:4' },
-  '24x36': { width: 24, height: 36, aspectRatio: '2:3' },
-  'square': { width: 20, height: 20, aspectRatio: '1:1' }
+  '8x10': { width: 8, height: 10, aspectRatio: '4:5', displayRatio: '4:5' },
+  '11x14': { width: 11, height: 14, aspectRatio: '4:5', displayRatio: '11:14' }, // 11:14 ≈ 0.786, closest to 4:5 (0.8)
+  '16x20': { width: 16, height: 20, aspectRatio: '4:5', displayRatio: '4:5' },
+  '18x24': { width: 18, height: 24, aspectRatio: '4:5', displayRatio: '3:4' }, // 3:4 = 0.75, closest to 4:5 (0.8)
+  '24x36': { width: 24, height: 36, aspectRatio: '2:3', displayRatio: '2:3' },
+  'square': { width: 20, height: 20, aspectRatio: '1:1', displayRatio: '1:1' }
 };
 
 // HTML Template
@@ -609,12 +610,9 @@ app.post('/api/generate', async (req: Request, res: Response) => {
       throw new Error('Stability AI API key not configured');
     }
 
-    // Determine aspect ratio for Stability AI
-    let aspectRatio = '1:1';
-    if (printSize.aspectRatio === '4:5') aspectRatio = '4:5';
-    else if (printSize.aspectRatio === '3:4') aspectRatio = '3:4';
-    else if (printSize.aspectRatio === '2:3') aspectRatio = '2:3';
-    else if (printSize.aspectRatio === '1:1') aspectRatio = '1:1';
+    // Use aspect ratio compatible with Stability AI API
+    // Valid ratios: '21:9' | '16:9' | '3:2' | '5:4' | '1:1' | '4:5' | '2:3' | '9:16' | '9:21'
+    const aspectRatio = printSize.aspectRatio;
     
     // Call Stability AI API
     const formData = new FormData();
@@ -648,7 +646,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
       imageUrl,
       enhancedPrompt,
       size: `${printSize.width}x${printSize.height}`,
-      aspectRatio: printSize.aspectRatio
+      aspectRatio: printSize.displayRatio || printSize.aspectRatio
     });
 
   } catch (error) {
@@ -685,11 +683,9 @@ app.post('/apps/art-studio/api/generate', async (req: Request, res: Response) =>
       throw new Error('Stability AI API key not configured');
     }
 
-    let aspectRatio = '1:1';
-    if (printSize.aspectRatio === '4:5') aspectRatio = '4:5';
-    else if (printSize.aspectRatio === '3:4') aspectRatio = '3:4';
-    else if (printSize.aspectRatio === '2:3') aspectRatio = '2:3';
-    else if (printSize.aspectRatio === '1:1') aspectRatio = '1:1';
+    // Use aspect ratio compatible with Stability AI API
+    // Valid ratios: '21:9' | '16:9' | '3:2' | '5:4' | '1:1' | '4:5' | '2:3' | '9:16' | '9:21'
+    const aspectRatio = printSize.aspectRatio;
     
     const formData = new FormData();
     formData.append('prompt', enhancedPrompt);
@@ -721,7 +717,7 @@ app.post('/apps/art-studio/api/generate', async (req: Request, res: Response) =>
       imageUrl,
       enhancedPrompt,
       size: `${printSize.width}x${printSize.height}`,
-      aspectRatio: printSize.aspectRatio
+      aspectRatio: printSize.displayRatio || printSize.aspectRatio
     });
 
   } catch (error) {
