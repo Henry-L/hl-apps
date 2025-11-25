@@ -7,8 +7,18 @@ import jwt from 'jsonwebtoken';
 const app = express();
 const port = process.env.PORT || 8080;
 
-// JWT Secret (in production, use environment variable)
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this-in-production';
+// Load secrets from unified JSON secret or individual env vars
+let secrets: any = {};
+try {
+  if (process.env.APP_SECRETS) {
+    secrets = JSON.parse(process.env.APP_SECRETS);
+  }
+} catch (err) {
+  console.error('Failed to parse APP_SECRETS:', err);
+}
+
+// JWT Secret - from unified secret or individual env var
+const JWT_SECRET = secrets.jwt_secret || process.env.JWT_SECRET || 'your-secret-key-change-this-in-production';
 
 // Initialize Firestore
 const firestore = new Firestore({

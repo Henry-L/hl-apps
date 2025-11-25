@@ -44,9 +44,20 @@ echo -n "sk-YOUR-STABILITY-API-KEY-HERE" | \
 
 ### 3. Deploy to Cloud Run
 
+**With unified secrets (recommended):**
 ```bash
 cd apps/art-studio
 
+gcloud run deploy art-studio \
+  --source . \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-secrets="APP_SECRETS=app-secrets:latest"
+```
+
+**With individual secret (legacy):**
+```bash
 gcloud run deploy art-studio \
   --source . \
   --platform managed \

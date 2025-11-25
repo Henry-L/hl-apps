@@ -45,6 +45,10 @@ env/
 .env
 .env.local
 
+# Secrets (NEVER commit these!)
+secrets.json
+*-secrets.json
+
 # Logs
 *.log
 
