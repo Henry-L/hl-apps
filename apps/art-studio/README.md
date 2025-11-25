@@ -78,7 +78,10 @@ Add to your `firebase.json`:
 # Install dependencies
 npm install
 
-# Set environment variable
+# Option A: Use unified secrets JSON
+export APP_SECRETS='{"stability_api_key":"sk-your-key-here"}'
+
+# Option B: Use individual env var
 export STABILITY_API_KEY="sk-your-key-here"
 
 # Run dev server

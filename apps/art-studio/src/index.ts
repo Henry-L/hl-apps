@@ -4,8 +4,18 @@ import cors from 'cors';
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Stability AI API Key (from environment variable or Secret Manager)
-const STABILITY_API_KEY = process.env.STABILITY_API_KEY || '';
+// Load secrets from unified JSON secret or individual env vars
+let secrets: any = {};
+try {
+  if (process.env.APP_SECRETS) {
+    secrets = JSON.parse(process.env.APP_SECRETS);
+  }
+} catch (err) {
+  console.error('Failed to parse APP_SECRETS:', err);
+}
+
+// Stability AI API Key (from unified secret or individual env var)
+const STABILITY_API_KEY = secrets.stability_api_key || process.env.STABILITY_API_KEY || '';
 
 // Middleware
 app.use(cors());
