@@ -13,6 +13,12 @@ gcloud services enable secretmanager.googleapis.com
 # Create a dummy JSON secret (edit through console later)
 echo '{"stability_api_key":"REPLACE_ME","jwt_secret":"REPLACE_ME"}' | \
   gcloud secrets create app-secrets --data-file=-
+
+# Grant Cloud Run service account access to the secret
+PROJECT_NUMBER=$(gcloud projects describe $(gcloud config get-value project) --format="value(projectNumber)")
+gcloud secrets add-iam-policy-binding app-secrets \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
 ```
 
 ### 2. Edit the secret through GCP Console
