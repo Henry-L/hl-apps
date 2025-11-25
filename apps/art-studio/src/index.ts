@@ -711,7 +711,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
 
 app.post('/apps/art-studio/api/generate', async (req: Request, res: Response) => {
   try {
-    const { prompt, size } = req.body;
+    const { prompt, size, style = 'digital-art' } = req.body;
 
     if (!prompt || !size) {
       res.status(400).json({ error: 'Prompt and size are required' });
@@ -724,8 +724,10 @@ app.post('/apps/art-studio/api/generate', async (req: Request, res: Response) =>
       return;
     }
 
-    console.log('Enhancing prompt locally...');
-    const enhancedPrompt = enhancePrompt(prompt, printSize);
+    const selectedStyle = ART_STYLES[style as keyof typeof ART_STYLES] || ART_STYLES['digital-art'];
+
+    console.log('Enhancing prompt locally with style:', selectedStyle.name);
+    const enhancedPrompt = enhancePrompt(prompt, printSize, style);
     console.log('Enhanced prompt:', enhancedPrompt);
 
     console.log('Generating image with Stability AI...');
