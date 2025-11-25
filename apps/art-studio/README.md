@@ -1,11 +1,12 @@
 # Art Studio
 
-AI-powered wall art generator using **free local prompt enhancement** + **Stability AI** image generation. Uses your Stability credits (no Gemini costs!). Optimized for print sizes.
+AI-powered wall art generator using **FREE Gemini API** for prompt enhancement + **Stability AI** for image generation. Both have generous free tiers! Optimized for print sizes.
 
 ## Features
 
 - 🎨 **AI Image Generation** - Powered by Stability AI SD3
-- ✨ **Free Prompt Enhancement** - Automatically optimizes your prompts (no Gemini costs!)
+- ✨ **Smart Prompt Enhancement** - FREE Gemini API optimizes your prompts intelligently
+- 🎭 **8 Art Styles** - Photorealistic, Abstract, Cartoon, Watercolor, and more
 - 📐 **Print-Optimized** - Choose from standard frame sizes (8x10, 16x20, 24x36, etc.)
 - ⬇️ **Download Ready** - High-resolution PNG files ready for printing
 - 🎯 **Aspect Ratio Matching** - Automatically optimizes for your chosen print size

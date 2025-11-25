@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -14,8 +15,18 @@ try {
   console.error('Failed to parse APP_SECRETS:', err);
 }
 
-// Stability AI API Key (from unified secret or individual env var)
+// API Keys (from unified secret or individual env vars)
 const STABILITY_API_KEY = secrets.stability_api_key || process.env.STABILITY_API_KEY || '';
+const GEMINI_API_KEY = secrets.gemini_api_key || process.env.GEMINI_API_KEY || '';
+
+// Initialize Gemini (FREE tier!)
+let genAI: GoogleGenerativeAI | null = null;
+if (GEMINI_API_KEY) {
+  genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+  console.log('✓ Gemini API initialized (FREE tier)');
+} else {
+  console.log('⚠ Gemini API key not found - using local enhancement');
+}
 
 // Middleware
 app.use(cors());
@@ -616,18 +627,49 @@ app.get('/apps/art-studio/api/health', async (req: Request, res: Response) => {
   res.json({ status: 'healthy' });
 });
 
-// Helper function to enhance prompts locally (free alternative to Gemini)
-function enhancePrompt(userPrompt: string, printSize: any, style: string): string {
+// Helper function to enhance prompts with Gemini AI (FREE!) or fallback to local
+async function enhancePrompt(userPrompt: string, printSize: any, style: string): Promise<string> {
   const printContext = `${printSize.width}x${printSize.height} inch print`;
-  const baseQuality = '8K quality, print-ready';
-  
-  // Get style-specific prompt additions
   const styleInfo = ART_STYLES[style as keyof typeof ART_STYLES] || ART_STYLES['digital-art'];
-  const stylePrompt = styleInfo.prompt;
   
-  // Enhance the prompt by adding style and quality terms
+  // Try using Gemini API (FREE tier) for intelligent enhancement
+  if (genAI) {
+    try {
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      
+      const enhancementPrompt = `You are an expert at creating detailed, high-quality prompts for AI art generation.
+
+User's prompt: "${userPrompt}"
+Desired style: ${styleInfo.name} - ${styleInfo.description}
+Print size: ${printSize.width}x${printSize.height} inches
+
+Enhance this prompt by:
+1. Adding specific details for the ${styleInfo.name} style
+2. Including artistic elements (composition, lighting, mood, colors)
+3. Mentioning print quality and resolution
+4. Keeping it concise (under 150 words)
+5. Making it suitable for wall art
+
+Return ONLY the enhanced prompt text, nothing else. No explanations, no quotes.`;
+
+      const result = await model.generateContent(enhancementPrompt);
+      const enhanced = result.response.text().trim();
+      
+      console.log('✓ Enhanced with Gemini AI (FREE)');
+      return enhanced;
+      
+    } catch (error) {
+      console.error('Gemini enhancement failed, using local fallback:', error);
+      // Fall through to local enhancement
+    }
+  }
+  
+  // Fallback: Local enhancement (simple keyword addition)
+  const baseQuality = '8K quality, print-ready';
+  const stylePrompt = styleInfo.prompt;
   const enhanced = `${userPrompt}, ${stylePrompt}, ${baseQuality}, perfect for wall art and ${printContext}, gallery quality, highly detailed`;
   
+  console.log('⚠ Using local prompt enhancement (no Gemini API key)');
   return enhanced;
 }
 
@@ -650,9 +692,9 @@ app.post('/api/generate', async (req: Request, res: Response) => {
     // Validate style
     const selectedStyle = ART_STYLES[style as keyof typeof ART_STYLES] || ART_STYLES['digital-art'];
 
-    // Step 1: Enhance the prompt (free, no API needed - no Gemini!)
-    console.log('Enhancing prompt locally with style:', selectedStyle.name);
-    const enhancedPrompt = enhancePrompt(prompt, printSize, style);
+    // Step 1: Enhance the prompt with AI (FREE Gemini API!)
+    console.log('Enhancing prompt with style:', selectedStyle.name);
+    const enhancedPrompt = await enhancePrompt(prompt, printSize, style);
     console.log('Enhanced prompt:', enhancedPrompt);
 
     // Step 2: Generate image using Stability AI
@@ -727,8 +769,8 @@ app.post('/apps/art-studio/api/generate', async (req: Request, res: Response) =>
 
     const selectedStyle = ART_STYLES[style as keyof typeof ART_STYLES] || ART_STYLES['digital-art'];
 
-    console.log('Enhancing prompt locally with style:', selectedStyle.name);
-    const enhancedPrompt = enhancePrompt(prompt, printSize, style);
+    console.log('Enhancing prompt with style:', selectedStyle.name);
+    const enhancedPrompt = await enhancePrompt(prompt, printSize, style);
     console.log('Enhanced prompt:', enhancedPrompt);
 
     console.log('Generating image with Stability AI...');
