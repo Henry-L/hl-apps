@@ -662,8 +662,7 @@ Enhance this prompt by:
 1. Adding specific details for the ${styleInfo.name} style
 2. Including artistic elements (composition, lighting, mood, colors)
 3. Mentioning print quality and resolution
-4. Keeping it concise (under 150 words)
-5. Making it suitable for wall art
+4. Making it suitable for wall art
 
 Return ONLY the enhanced prompt text, nothing else. No explanations, no quotes.`;
 
