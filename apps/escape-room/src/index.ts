@@ -1,25 +1,14 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import { v4 as uuidv4 } from 'uuid';
 
 const app = express();
 const port = process.env.PORT || 8080;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// In-memory game sessions (in production, use Redis or Firestore)
-interface GameSession {
-  id: string;
-  createdAt: Date;
-  currentPuzzle: number;
-  solved: boolean[];
-  player1Joined: boolean;
-  player2Joined: boolean;
-}
-
-const sessions: Map<string, GameSession> = new Map();
+// Simple in-memory game state (shared between both players on same device/session)
+// In a real couch co-op, players just communicate verbally - no sync needed!
 
 // Puzzle definitions - each has info split between players
 const PUZZLES = [
@@ -29,14 +18,13 @@ const PUZZLES = [
     description: "A heavy safe blocks your escape. The combination is hidden...",
     player1Info: {
       title: "🔍 Torn Note Fragment",
-      content: "You found a torn piece of paper with symbols: ▲ = 7, ● = 3, ■ = 9",
+      content: "You found a torn piece of paper with symbols:\n\n▲ = 7\n● = 3\n■ = 9",
       hint: "Tell Player 2 what each symbol means!"
     },
     player2Info: {
       title: "🔐 Safe Keypad",
-      content: "The safe has a 4-digit code. Above the keypad are symbols: ● ▲ ■ ▲",
+      content: "The safe has a 4-digit code.\n\nAbove the keypad you see:\n● ▲ ■ ▲",
       hint: "Ask Player 1 what the symbols mean, then enter the code!",
-      inputType: "code",
       answer: "3797"
     }
   },
@@ -46,14 +34,13 @@ const PUZZLES = [
     description: "A tangle of wires blocks the door mechanism...",
     player1Info: {
       title: "📋 Maintenance Manual",
-      content: "WIRE CUTTING ORDER:\n1. Cut the wire that rhymes with 'bed'\n2. Cut the wire matching the sky\n3. Cut the wire of warning signs\n4. Cut the wire of fresh grass",
+      content: "WIRE CUTTING ORDER:\n\n1. Cut the wire that rhymes with 'bed'\n2. Cut the wire matching the sky\n3. Cut the wire of warning signs\n4. Cut the wire of fresh grass",
       hint: "Describe the order to Player 2 using colors!"
     },
     player2Info: {
       title: "✂️ Wire Panel",
-      content: "You see 4 colored wires: 🔴 RED, 🔵 BLUE, 🟡 YELLOW, 🟢 GREEN",
+      content: "You see 4 colored wires:\n\n🔴 RED\n🔵 BLUE\n🟡 YELLOW\n🟢 GREEN\n\nEnter the colors in order, separated by commas.",
       hint: "Ask Player 1 for the cutting order!",
-      inputType: "sequence",
       answer: "RED,BLUE,YELLOW,GREEN"
     }
   },
@@ -63,14 +50,13 @@ const PUZZLES = [
     description: "A locked cabinet contains the exit key...",
     player1Info: {
       title: "🗺️ Treasure Map",
-      content: "The map shows a grid with an X marked at position Row C, Column 4. A note says: 'Add 2 to row, subtract 1 from column'",
+      content: "The map shows a grid with an X at:\n\nRow C, Column 4\n\nA note says:\n'Add 2 to the row letter,\nsubtract 1 from the column'",
       hint: "Calculate the final position and tell Player 2!"
     },
     player2Info: {
       title: "📍 Coordinate Lock",
-      content: "The lock has a grid selector:\n   1  2  3  4  5\nA  ·  ·  ·  ·  ·\nB  ·  ·  ·  ·  ·\nC  ·  ·  ·  ·  ·\nD  ·  ·  ·  ·  ·\nE  ·  ·  ·  ·  ·",
+      content: "The lock has a grid selector:\n\n     1  2  3  4  5\n A   ·  ·  ·  ·  ·\n B   ·  ·  ·  ·  ·\n C   ·  ·  ·  ·  ·\n D   ·  ·  ·  ·  ·\n E   ·  ·  ·  ·  ·\n\nEnter as: E3, A1, etc.",
       hint: "Ask Player 1 for the coordinates!",
-      inputType: "coordinate",
       answer: "E3"
     }
   },
@@ -80,91 +66,65 @@ const PUZZLES = [
     description: "An ancient clock holds the final secret...",
     player1Info: {
       title: "📜 Old Journal",
-      content: "Entry dated 1923:\n'The clock shows midnight when the hour hand points to where the sun sets, and the minute hand points to the number of seasons.'",
-      hint: "West = 9 (on a clock), Seasons = 4. Tell Player 2!"
+      content: "Entry dated 1923:\n\n'The clock shows the hour when\nthe hour hand points to where\nthe sun sets (West on compass),\n\nand the minute hand points to\nthe number of seasons.'",
+      hint: "West = 9 on a clock face, Seasons = 4 (so :20). Tell Player 2!"
     },
     player2Info: {
       title: "🕰️ Grandfather Clock",
-      content: "The clock hands can be set to any position. You need to set Hour and Minute hands correctly.",
+      content: "The clock hands can be set to any position.\n\nEnter the time in format: H:MM\n(like 3:45 or 12:00)",
       hint: "Ask Player 1 what time to set!",
-      inputType: "time",
       answer: "9:20"
     }
   }
 ];
 
-// CSS following design guide
+// CSS following design guide - grayscale with color pops
 const STYLES = `
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
   
-  * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
   
   :root {
-    --color-black: #000000;
-    --color-gray-900: #1f1f1f;
-    --color-gray-700: #434343;
-    --color-gray-500: #8c8c8c;
-    --color-gray-300: #d9d9d9;
-    --color-gray-100: #f5f5f5;
-    --color-white: #ffffff;
-    --color-primary: #1677ff;
-    --color-success: #52c41a;
-    --color-warning: #faad14;
-    --color-error: #ff4d4f;
+    --black: #000000;
+    --gray-900: #1f1f1f;
+    --gray-700: #434343;
+    --gray-500: #8c8c8c;
+    --gray-300: #d9d9d9;
+    --gray-100: #f5f5f5;
+    --white: #ffffff;
+    --primary: #1677ff;
+    --success: #52c41a;
+    --error: #ff4d4f;
   }
   
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: var(--color-gray-100);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--gray-100);
     min-height: 100vh;
-    color: var(--color-gray-900);
+    color: var(--gray-900);
     line-height: 1.6;
   }
   
   .container {
-    max-width: 800px;
+    max-width: 600px;
     margin: 0 auto;
     padding: 24px;
   }
   
   .card {
-    background: var(--color-white);
+    background: var(--white);
     border-radius: 8px;
     padding: 24px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     margin-bottom: 16px;
   }
   
-  h1 {
-    font-size: 32px;
-    font-weight: 700;
-    margin-bottom: 8px;
-    color: var(--color-black);
-  }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  h2 { font-size: 22px; font-weight: 600; margin-bottom: 12px; }
+  h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; color: var(--gray-700); }
   
-  h2 {
-    font-size: 24px;
-    font-weight: 600;
-    margin-bottom: 16px;
-    color: var(--color-gray-900);
-  }
-  
-  h3 {
-    font-size: 18px;
-    font-weight: 600;
-    margin-bottom: 12px;
-  }
-  
-  .subtitle {
-    color: var(--color-gray-500);
-    font-size: 16px;
-    margin-bottom: 24px;
-  }
+  .subtitle { color: var(--gray-500); margin-bottom: 24px; }
   
   .btn {
     display: inline-flex;
@@ -178,136 +138,78 @@ const STYLES = `
     transition: all 0.2s;
     border: none;
     font-family: inherit;
+    text-decoration: none;
   }
   
-  .btn-primary {
-    background: var(--color-primary);
-    color: white;
-  }
-  
-  .btn-primary:hover {
-    background: #4096ff;
-  }
-  
-  .btn-default {
-    background: var(--color-white);
-    border: 1px solid var(--color-gray-300);
-    color: var(--color-gray-700);
-  }
-  
-  .btn-default:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-  }
-  
-  .btn-success {
-    background: var(--color-success);
-    color: white;
-  }
-  
-  .btn-block {
-    width: 100%;
-  }
-  
-  .btn-lg {
-    padding: 16px 32px;
-    font-size: 18px;
-  }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: #4096ff; }
+  .btn-default { background: var(--white); border: 1px solid var(--gray-300); color: var(--gray-700); }
+  .btn-default:hover { border-color: var(--primary); color: var(--primary); }
+  .btn-success { background: var(--success); color: white; }
+  .btn-block { width: 100%; }
+  .btn-lg { padding: 16px 32px; font-size: 18px; }
   
   .player-select {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
-    margin-top: 24px;
+    margin: 24px 0;
   }
   
   .player-card {
-    padding: 32px;
+    padding: 24px;
     text-align: center;
     cursor: pointer;
     transition: all 0.2s;
+    border: 2px solid var(--gray-300);
   }
   
   .player-card:hover {
-    border-color: var(--color-primary);
+    border-color: var(--primary);
     transform: translateY(-2px);
   }
   
-  .player-card .icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-  }
+  .player-card .icon { font-size: 40px; margin-bottom: 12px; }
   
   .input {
     width: 100%;
     padding: 12px;
     font-size: 16px;
-    border: 1px solid var(--color-gray-300);
+    border: 1px solid var(--gray-300);
     border-radius: 6px;
     font-family: inherit;
   }
   
   .input:focus {
     outline: none;
-    border-color: var(--color-primary);
+    border-color: var(--primary);
     box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
   }
   
-  .form-group {
-    margin-bottom: 16px;
-  }
-  
-  .form-group label {
-    display: block;
-    margin-bottom: 8px;
-    font-weight: 500;
-    color: var(--color-gray-700);
-  }
-  
   .info-box {
-    background: var(--color-gray-100);
-    border: 1px solid var(--color-gray-300);
+    background: var(--gray-100);
+    border: 1px solid var(--gray-300);
     border-radius: 6px;
     padding: 16px;
     margin: 16px 0;
   }
   
-  .info-box.primary {
-    background: #e6f4ff;
-    border-color: #91caff;
+  .info-box.blue { background: #e6f4ff; border-color: #91caff; }
+  .info-box.yellow { background: #fffbe6; border-color: #ffe58f; }
+  
+  .content-box {
+    background: var(--white);
+    border: 1px solid var(--gray-300);
+    border-radius: 6px;
+    padding: 20px;
+    font-family: 'Courier New', monospace;
+    white-space: pre-wrap;
+    font-size: 16px;
+    line-height: 1.8;
+    margin: 12px 0;
   }
   
-  .info-box.warning {
-    background: #fffbe6;
-    border-color: #ffe58f;
-  }
-  
-  .hint {
-    color: var(--color-gray-500);
-    font-size: 14px;
-    margin-top: 8px;
-  }
-  
-  .progress-bar {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 24px;
-  }
-  
-  .progress-step {
-    flex: 1;
-    height: 8px;
-    background: var(--color-gray-300);
-    border-radius: 4px;
-  }
-  
-  .progress-step.completed {
-    background: var(--color-success);
-  }
-  
-  .progress-step.current {
-    background: var(--color-primary);
-  }
+  .hint { color: var(--gray-500); font-size: 14px; margin-top: 12px; }
   
   .badge {
     display: inline-block;
@@ -318,84 +220,40 @@ const STYLES = `
     margin-right: 8px;
   }
   
-  .badge-blue {
-    background: #e6f4ff;
-    color: var(--color-primary);
-  }
-  
-  .badge-green {
-    background: #f6ffed;
-    color: var(--color-success);
-  }
+  .badge-blue { background: #e6f4ff; color: var(--primary); }
+  .badge-green { background: #f6ffed; color: var(--success); }
   
   .message {
     padding: 12px 16px;
     border-radius: 6px;
     margin: 16px 0;
-    display: none;
   }
   
-  .message.show {
-    display: block;
-  }
+  .message.success { background: #f6ffed; border: 1px solid #b7eb8f; color: #389e0d; }
+  .message.error { background: #fff2f0; border: 1px solid #ffccc7; color: #cf1322; }
   
-  .message.success {
-    background: #f6ffed;
-    border: 1px solid #b7eb8f;
-    color: #389e0d;
-  }
+  .nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
   
-  .message.error {
-    background: #fff2f0;
-    border: 1px solid #ffccc7;
-    color: #cf1322;
+  .progress { display: flex; gap: 6px; margin: 16px 0; }
+  .progress-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--gray-300);
   }
+  .progress-dot.done { background: var(--success); }
+  .progress-dot.current { background: var(--primary); }
   
-  .content-box {
-    background: var(--color-white);
-    border: 1px solid var(--color-gray-300);
-    border-radius: 6px;
-    padding: 20px;
-    font-family: 'Courier New', monospace;
-    white-space: pre-wrap;
-    font-size: 15px;
-    line-height: 1.8;
-  }
+  .victory { text-align: center; padding: 48px 24px; }
+  .victory h1 { font-size: 48px; margin-bottom: 16px; }
   
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 24px;
-  }
-  
-  .room-code {
-    font-family: monospace;
-    font-size: 18px;
-    background: var(--color-gray-100);
-    padding: 8px 16px;
-    border-radius: 4px;
-  }
-  
-  .victory {
-    text-align: center;
-    padding: 48px 24px;
-  }
-  
-  .victory h1 {
-    font-size: 48px;
-    margin-bottom: 16px;
-  }
-  
-  @media (max-width: 600px) {
-    .player-select {
-      grid-template-columns: 1fr;
-    }
+  @media (max-width: 500px) {
+    .player-select { grid-template-columns: 1fr; }
+    .container { padding: 16px; }
   }
 </style>
 `;
 
-// Landing page HTML
+// Landing page
 const landingHTML = `
 <!DOCTYPE html>
 <html lang="en">
@@ -403,129 +261,59 @@ const landingHTML = `
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="https://hl-apps.web.app/favicon.svg">
-  <title>🔐 Escape Room - 2 Player Co-op</title>
+  <title>🔐 Escape Room</title>
   ${STYLES}
 </head>
 <body>
   <div class="container">
-    <div class="card" style="text-align: center; padding: 48px 24px;">
+    <div class="card" style="text-align: center;">
       <h1>🔐 Escape Room</h1>
       <p class="subtitle">A 2-player cooperative puzzle game</p>
       
-      <div class="info-box primary" style="text-align: left; max-width: 500px; margin: 24px auto;">
+      <div class="info-box blue" style="text-align: left;">
         <h3>📋 How to Play</h3>
         <p style="margin-top: 8px;">
-          • Two players work together to escape<br>
-          • Each player sees <strong>different information</strong><br>
-          • You must <strong>communicate</strong> to solve puzzles<br>
-          • Share clues verbally - don't show your screen!
+          • Grab a friend and sit together<br>
+          • Each player opens a different screen<br>
+          • You each see <strong>different clues</strong><br>
+          • <strong>Talk to each other</strong> to solve puzzles!<br>
+          • Don't peek at each other's screens! 👀
         </p>
       </div>
       
-      <div style="margin: 32px 0;">
-        <button class="btn btn-primary btn-lg" onclick="createRoom()">
-          🚀 Create New Room
-        </button>
-      </div>
-      
-      <div style="margin-top: 32px;">
-        <p style="color: var(--color-gray-500); margin-bottom: 12px;">Or join an existing room:</p>
-        <div style="display: flex; gap: 12px; max-width: 400px; margin: 0 auto;">
-          <input type="text" id="roomCode" class="input" placeholder="Enter room code" style="text-transform: uppercase;">
-          <button class="btn btn-default" onclick="joinRoom()">Join</button>
-        </div>
-      </div>
-    </div>
-  </div>
-  
-  <script>
-    function createRoom() {
-      window.location.href = '/api/create-room';
-    }
-    
-    function joinRoom() {
-      const code = document.getElementById('roomCode').value.trim().toUpperCase();
-      if (code.length === 6) {
-        window.location.href = '/room/' + code;
-      } else {
-        alert('Please enter a valid 6-character room code');
-      }
-    }
-    
-    document.getElementById('roomCode').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') joinRoom();
-    });
-  </script>
-</body>
-</html>
-`;
-
-// Room lobby HTML
-function roomLobbyHTML(roomId: string): string {
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" type="image/svg+xml" href="https://hl-apps.web.app/favicon.svg">
-  <title>🔐 Room ${roomId}</title>
-  ${STYLES}
-</head>
-<body>
-  <div class="container">
-    <div class="card">
-      <div class="header">
-        <h2>🔐 Room Lobby</h2>
-        <div class="room-code">Code: <strong>${roomId}</strong></div>
-      </div>
-      
-      <p class="subtitle">Share this code with your partner, then each pick a role:</p>
-      
       <div class="player-select">
-        <div class="card player-card" onclick="selectPlayer(1)">
+        <a href="/play/1" class="card player-card" style="text-decoration: none; color: inherit;">
           <div class="icon">🔍</div>
-          <h3>Player 1</h3>
-          <p style="color: var(--color-gray-500);">The Investigator</p>
-          <p style="font-size: 14px; margin-top: 8px;">You find clues and documents</p>
-        </div>
+          <h3 style="margin: 0;">Player 1</h3>
+          <p style="color: var(--gray-500); font-size: 14px;">The Investigator</p>
+        </a>
         
-        <div class="card player-card" onclick="selectPlayer(2)">
+        <a href="/play/2" class="card player-card" style="text-decoration: none; color: inherit;">
           <div class="icon">🔧</div>
-          <h3>Player 2</h3>
-          <p style="color: var(--color-gray-500);">The Operator</p>
-          <p style="font-size: 14px; margin-top: 8px;">You interact with locks and devices</p>
-        </div>
+          <h3 style="margin: 0;">Player 2</h3>
+          <p style="color: var(--gray-500); font-size: 14px;">The Operator</p>
+        </a>
       </div>
       
-      <div class="info-box warning" style="margin-top: 24px;">
-        <strong>⚠️ Important:</strong> Don't show your screen to the other player! Communication is the key to escape.
+      <div class="info-box yellow">
+        <strong>⚠️ Important:</strong> Don't show your screen to the other player!
       </div>
     </div>
   </div>
-  
-  <script>
-    function selectPlayer(player) {
-      window.location.href = '/room/${roomId}/player/' + player;
-    }
-  </script>
 </body>
 </html>
 `;
-}
 
-// Game HTML for each player
-function gameHTML(roomId: string, player: number, session: GameSession): string {
-  const puzzleIndex = session.currentPuzzle;
-  const puzzle = PUZZLES[puzzleIndex];
-  const isComplete = puzzleIndex >= PUZZLES.length;
+// Game page for each player
+function gameHTML(player: number, puzzleNum: number, message?: { type: string; text: string }): string {
+  const puzzle = PUZZLES[puzzleNum - 1];
   
-  if (isComplete) {
-    return victoryHTML(roomId);
+  if (!puzzle) {
+    return victoryHTML();
   }
   
-  const playerInfo = player === 1 ? puzzle.player1Info : puzzle.player2Info;
-  const hasInput = player === 2;
+  const info = player === 1 ? puzzle.player1Info : puzzle.player2Info;
+  const isOperator = player === 2;
   
   return `
 <!DOCTYPE html>
@@ -534,95 +322,63 @@ function gameHTML(roomId: string, player: number, session: GameSession): string 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="https://hl-apps.web.app/favicon.svg">
-  <title>🔐 ${puzzle.name} - Player ${player}</title>
+  <title>🔐 Puzzle ${puzzleNum} - Player ${player}</title>
   ${STYLES}
 </head>
 <body>
   <div class="container">
     <div class="card">
-      <div class="header">
+      <div class="nav">
+        <a href="/" class="btn btn-default" style="padding: 8px 16px;">← Back</a>
         <div>
           <span class="badge badge-blue">Player ${player}</span>
-          <span class="badge badge-green">Puzzle ${puzzleIndex + 1}/${PUZZLES.length}</span>
+          <span class="badge badge-green">Puzzle ${puzzleNum}/${PUZZLES.length}</span>
         </div>
-        <div class="room-code">${roomId}</div>
       </div>
       
-      <div class="progress-bar">
+      <div class="progress">
         ${PUZZLES.map((_, i) => `
-          <div class="progress-step ${i < puzzleIndex ? 'completed' : i === puzzleIndex ? 'current' : ''}"></div>
+          <div class="progress-dot ${i < puzzleNum - 1 ? 'done' : i === puzzleNum - 1 ? 'current' : ''}"></div>
         `).join('')}
       </div>
       
       <h2>${puzzle.name}</h2>
-      <p style="color: var(--color-gray-500); margin-bottom: 24px;">${puzzle.description}</p>
-      
-      <div class="card" style="border: 2px solid var(--color-primary);">
-        <h3>${playerInfo.title}</h3>
-        <div class="content-box">${playerInfo.content}</div>
-        <p class="hint">💡 ${playerInfo.hint}</p>
-      </div>
-      
-      ${hasInput ? `
-        <div class="card" style="margin-top: 16px;">
-          <h3>🎯 Your Action</h3>
-          <form onsubmit="submitAnswer(event)">
-            <div class="form-group">
-              <label>Enter your answer:</label>
-              <input type="text" id="answer" class="input" placeholder="Type your answer..." autocomplete="off">
-            </div>
-            <button type="submit" class="btn btn-primary btn-block">Submit Answer</button>
-          </form>
-          <div id="message" class="message"></div>
-        </div>
-      ` : `
-        <div class="info-box" style="margin-top: 16px; text-align: center;">
-          <p>📢 Share this information with Player 2!</p>
-          <p style="font-size: 14px; color: var(--color-gray-500);">Waiting for them to solve the puzzle...</p>
-          <button class="btn btn-default" style="margin-top: 12px;" onclick="location.reload()">🔄 Refresh Status</button>
-        </div>
-      `}
+      <p style="color: var(--gray-500);">${puzzle.description}</p>
     </div>
-  </div>
-  
-  <script>
-    async function submitAnswer(e) {
-      e.preventDefault();
-      const answer = document.getElementById('answer').value.trim().toUpperCase();
-      const msgEl = document.getElementById('message');
-      
-      try {
-        const res = await fetch('/api/room/${roomId}/answer', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ answer, puzzle: ${puzzleIndex} })
-        });
-        
-        const data = await res.json();
-        
-        if (data.correct) {
-          msgEl.className = 'message success show';
-          msgEl.innerHTML = '✅ Correct! Moving to next puzzle...';
-          setTimeout(() => location.reload(), 1500);
-        } else {
-          msgEl.className = 'message error show';
-          msgEl.innerHTML = '❌ Incorrect. Try again!';
-        }
-      } catch (err) {
-        msgEl.className = 'message error show';
-        msgEl.innerHTML = '❌ Error submitting answer';
-      }
-    }
     
-    // Auto-refresh for Player 1 to check progress
-    ${player === 1 ? `setInterval(() => location.reload(), 10000);` : ''}
-  </script>
+    <div class="card" style="border-left: 4px solid var(--primary);">
+      <h3>${info.title}</h3>
+      <div class="content-box">${info.content}</div>
+      <p class="hint">💡 ${info.hint}</p>
+    </div>
+    
+    ${isOperator ? `
+      <div class="card">
+        <h3>🎯 Enter Your Answer</h3>
+        <form action="/play/${player}/answer" method="POST">
+          <input type="hidden" name="puzzle" value="${puzzleNum}">
+          <input type="text" name="answer" class="input" placeholder="Type your answer..." autocomplete="off" autofocus>
+          <button type="submit" class="btn btn-primary btn-block" style="margin-top: 12px;">
+            Submit Answer
+          </button>
+        </form>
+        ${message ? `<div class="message ${message.type}">${message.text}</div>` : ''}
+      </div>
+    ` : `
+      <div class="info-box" style="text-align: center;">
+        <p>📢 <strong>Share this info with Player 2!</strong></p>
+        <p style="font-size: 14px; color: var(--gray-500); margin-top: 8px;">
+          They need your clues to solve the puzzle.
+        </p>
+      </div>
+    `}
+  </div>
 </body>
 </html>
 `;
 }
 
-function victoryHTML(roomId: string): string {
+function victoryHTML(): string {
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -636,12 +392,13 @@ function victoryHTML(roomId: string): string {
 <body>
   <div class="container">
     <div class="card victory">
-      <h1>🎉 ESCAPED! 🎉</h1>
-      <p style="font-size: 24px; margin-bottom: 24px;">Congratulations, you solved all puzzles!</p>
-      <p style="color: var(--color-gray-500);">Great teamwork and communication!</p>
-      <a href="/" class="btn btn-primary btn-lg" style="margin-top: 32px; text-decoration: none;">
-        🔄 Play Again
-      </a>
+      <h1>🎉</h1>
+      <h1>ESCAPED!</h1>
+      <p style="font-size: 18px; margin: 24px 0; color: var(--gray-500);">
+        Congratulations! You solved all ${PUZZLES.length} puzzles!
+      </p>
+      <p style="margin-bottom: 32px;">Great teamwork! 🤝</p>
+      <a href="/" class="btn btn-primary btn-lg">Play Again</a>
     </div>
   </div>
 </body>
@@ -649,103 +406,52 @@ function victoryHTML(roomId: string): string {
 `;
 }
 
+// Simple state - just track current puzzle (resets on server restart)
+let currentPuzzle = 1;
+
 // Routes
-app.get('/', (req: Request, res: Response) => {
-  res.send(landingHTML);
-});
+app.get('/', (req, res) => res.send(landingHTML));
+app.get('/apps/escape-room', (req, res) => res.send(landingHTML));
+app.get('/apps/escape-room/', (req, res) => res.send(landingHTML));
 
-// Firebase proxy routes
-app.get('/apps/escape-room', (req: Request, res: Response) => res.send(landingHTML));
-app.get('/apps/escape-room/', (req: Request, res: Response) => res.send(landingHTML));
-
-app.get('/api/create-room', (req: Request, res: Response) => {
-  const roomId = uuidv4().substring(0, 6).toUpperCase();
-  sessions.set(roomId, {
-    id: roomId,
-    createdAt: new Date(),
-    currentPuzzle: 0,
-    solved: [],
-    player1Joined: false,
-    player2Joined: false
-  });
-  res.redirect('/room/' + roomId);
-});
-
-app.get('/room/:roomId', (req: Request, res: Response) => {
-  const roomId = req.params.roomId.toUpperCase();
-  if (!sessions.has(roomId)) {
-    sessions.set(roomId, {
-      id: roomId,
-      createdAt: new Date(),
-      currentPuzzle: 0,
-      solved: [],
-      player1Joined: false,
-      player2Joined: false
-    });
-  }
-  res.send(roomLobbyHTML(roomId));
-});
-
-app.get('/room/:roomId/player/:player', (req: Request, res: Response) => {
-  const roomId = req.params.roomId.toUpperCase();
+app.get('/play/:player', (req, res) => {
   const player = parseInt(req.params.player);
-  
-  let session = sessions.get(roomId);
-  if (!session) {
-    session = {
-      id: roomId,
-      createdAt: new Date(),
-      currentPuzzle: 0,
-      solved: [],
-      player1Joined: false,
-      player2Joined: false
-    };
-    sessions.set(roomId, session);
+  if (player !== 1 && player !== 2) {
+    return res.redirect('/');
   }
-  
-  if (player === 1) session.player1Joined = true;
-  if (player === 2) session.player2Joined = true;
-  
-  res.send(gameHTML(roomId, player, session));
+  res.send(gameHTML(player, currentPuzzle));
 });
 
-app.post('/api/room/:roomId/answer', (req: Request, res: Response) => {
-  const roomId = req.params.roomId.toUpperCase();
+app.post('/play/:player/answer', (req, res) => {
+  const player = parseInt(req.params.player);
   const { answer, puzzle } = req.body;
+  const puzzleNum = parseInt(puzzle);
   
-  const session = sessions.get(roomId);
-  if (!session) {
-    res.status(404).json({ error: 'Room not found' });
-    return;
+  const currentPuzzleData = PUZZLES[puzzleNum - 1];
+  if (!currentPuzzleData) {
+    return res.redirect('/');
   }
   
-  const currentPuzzle = PUZZLES[puzzle];
-  if (!currentPuzzle) {
-    res.status(400).json({ error: 'Invalid puzzle' });
-    return;
+  const correct = answer.trim().toUpperCase() === currentPuzzleData.player2Info.answer.toUpperCase();
+  
+  if (correct) {
+    currentPuzzle = puzzleNum + 1;
+    // Redirect to next puzzle (or victory)
+    res.redirect(`/play/${player}`);
+  } else {
+    res.send(gameHTML(player, puzzleNum, { type: 'error', text: '❌ Incorrect! Try again.' }));
   }
-  
-  const correctAnswer = currentPuzzle.player2Info.answer.toUpperCase();
-  const isCorrect = answer.toUpperCase() === correctAnswer;
-  
-  if (isCorrect) {
-    session.solved.push(true);
-    session.currentPuzzle++;
-  }
-  
-  res.json({ correct: isCorrect, nextPuzzle: session.currentPuzzle });
 });
 
-app.get('/health', (req: Request, res: Response) => {
-  res.json({ status: 'healthy' });
+// Reset game
+app.get('/reset', (req, res) => {
+  currentPuzzle = 1;
+  res.redirect('/');
 });
 
-app.get('/apps/escape-room/health', (req: Request, res: Response) => {
-  res.json({ status: 'healthy' });
-});
+app.get('/health', (req, res) => res.json({ status: 'healthy' }));
+app.get('/apps/escape-room/health', (req, res) => res.json({ status: 'healthy' }));
 
-// Start server
 app.listen(port, () => {
   console.log(`🔐 Escape Room running on port ${port}`);
 });
-
