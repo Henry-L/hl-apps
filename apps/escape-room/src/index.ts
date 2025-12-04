@@ -8,67 +8,86 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Track which puzzles are solved (resets on server restart)
-let solvedPuzzles: Set<number> = new Set();
+// Track which puzzles are solved
+let solvedPuzzles: Set<string> = new Set();
 
-// All the clues Player 1 sees (they need to figure out which goes with which puzzle)
-const CLUES = [
+// Player 1's puzzles (Player 2 has the clues for these)
+const PLAYER1_PUZZLES = [
   {
-    id: 1,
-    title: "🔍 Torn Note Fragment",
-    content: "A torn piece of paper with symbols:\n\n▲ = 7\n● = 3\n■ = 9"
-  },
-  {
-    id: 2,
-    title: "📋 Maintenance Manual",
-    content: "WIRE CUTTING ORDER:\n\n1. Cut the wire that rhymes with 'bed'\n2. Cut the wire matching the sky\n3. Cut the wire of warning signs\n4. Cut the wire of fresh grass"
-  },
-  {
-    id: 3,
-    title: "🗺️ Treasure Map",
-    content: "The map shows a grid with an X at:\n\nRow C, Column 4\n\nA note says:\n'Add 2 to the row letter,\nsubtract 1 from the column'"
-  },
-  {
-    id: 4,
-    title: "📜 Old Journal",
-    content: "Entry dated 1923:\n\n'The clock shows the hour when\nthe hour hand points to where\nthe sun sets (West on compass),\n\nand the minute hand points to\nthe number of seasons.'"
-  },
-  {
-    id: 5,
-    title: "📝 Cryptic Riddle",
-    content: "What has hands but can't clap?\nWhat has a face but can't smile?\nSet me right to escape in style."
-  }
-];
-
-// All the puzzles Player 2 sees
-const PUZZLES = [
-  {
-    id: 1,
+    id: 'p1-safe',
     title: "🔐 The Safe",
-    description: "A 4-digit combination lock. Symbols above keypad: ● ▲ ■ ▲",
+    description: "A 4-digit combination lock. Above it are symbols: ● ▲ ■ ▲",
     placeholder: "Enter 4 digits...",
     answer: "3797"
   },
   {
-    id: 2,
+    id: 'p1-clock',
+    title: "🕰️ Grandfather Clock",
+    description: "Set the clock hands to the correct time. Format: H:MM",
+    placeholder: "e.g. 3:45",
+    answer: "9:20"
+  }
+];
+
+// Player 2's puzzles (Player 1 has the clues for these)
+const PLAYER2_PUZZLES = [
+  {
+    id: 'p2-wires',
     title: "✂️ Wire Panel",
-    description: "4 wires: 🔴 RED, 🔵 BLUE, 🟡 YELLOW, 🟢 GREEN. Enter colors in order (comma separated).",
+    description: "4 wires: 🔴 RED, 🔵 BLUE, 🟡 YELLOW, 🟢 GREEN. Enter cutting order.",
     placeholder: "RED,BLUE,YELLOW,GREEN",
     answer: "RED,BLUE,YELLOW,GREEN"
   },
   {
-    id: 3,
+    id: 'p2-grid',
     title: "📍 Coordinate Lock",
-    description: "A grid lock (A-E rows, 1-5 columns). Enter position like: E3",
+    description: "A grid (rows A-E, columns 1-5). Enter position like: E3",
     placeholder: "Enter coordinate...",
     answer: "E3"
+  }
+];
+
+// Clues Player 1 sees (these help Player 2 solve THEIR puzzles)
+const PLAYER1_CLUES = [
+  {
+    id: 'c1-wires',
+    title: "📋 Maintenance Manual",
+    content: "WIRE CUTTING ORDER:\n\n1. Rhymes with 'bed'\n2. Color of the sky\n3. Warning sign color\n4. Fresh grass color",
+    forPuzzle: "Player 2's Wire Panel"
   },
   {
-    id: 4,
-    title: "🕰️ Grandfather Clock",
-    description: "Set the clock hands. Enter time as H:MM (like 3:45)",
-    placeholder: "Enter time...",
-    answer: "9:20"
+    id: 'c1-grid',
+    title: "🗺️ Treasure Map", 
+    content: "X marks the spot at: Row C, Column 4\n\nNote attached:\n'Add 2 to row letter,\nsubtract 1 from column'",
+    forPuzzle: "Player 2's Coordinate Lock"
+  },
+  {
+    id: 'c1-decoy',
+    title: "📝 Torn Grocery List",
+    content: "...eggs\n...milk\n...bread\n...mysterious key?\n\n(smudged and unreadable)",
+    forPuzzle: "???"
+  }
+];
+
+// Clues Player 2 sees (these help Player 1 solve THEIR puzzles)
+const PLAYER2_CLUES = [
+  {
+    id: 'c2-safe',
+    title: "🔍 Symbol Decoder",
+    content: "Found on a torn note:\n\n▲ = 7\n● = 3\n■ = 9",
+    forPuzzle: "Player 1's Safe"
+  },
+  {
+    id: 'c2-clock',
+    title: "📜 Old Journal Entry",
+    content: "Entry dated 1923:\n\n'Set the hour hand where\nthe sun sets (West)...\n\nSet minutes to the\nnumber of seasons.'",
+    forPuzzle: "Player 1's Clock"
+  },
+  {
+    id: 'c2-decoy',
+    title: "🎭 Theater Ticket",
+    content: "ADMIT ONE\nRow Z, Seat 99\nShow: 'The Red Herring'\n8:00 PM",
+    forPuzzle: "???"
   }
 ];
 
@@ -89,6 +108,7 @@ const STYLES = `
     --primary: #1677ff;
     --success: #52c41a;
     --error: #ff4d4f;
+    --purple: #722ed1;
   }
   
   body {
@@ -99,33 +119,54 @@ const STYLES = `
     line-height: 1.6;
   }
   
-  .container { max-width: 700px; margin: 0 auto; padding: 24px; }
+  .container { max-width: 700px; margin: 0 auto; padding: 20px; }
   
   .card {
     background: var(--white);
     border-radius: 8px;
     padding: 20px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
   
   .card.solved {
-    opacity: 0.6;
+    opacity: 0.5;
     background: #f6ffed;
-    border: 1px solid #b7eb8f;
   }
   
-  h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
-  h2 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
-  h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; color: var(--gray-700); }
+  .card.clue {
+    border-left: 4px solid var(--purple);
+  }
   
-  .subtitle { color: var(--gray-500); margin-bottom: 20px; }
+  .card.puzzle {
+    border-left: 4px solid var(--primary);
+  }
+  
+  h1 { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
+  h2 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+  h3 { font-size: 14px; font-weight: 600; color: var(--gray-500); margin-bottom: 4px; }
+  
+  .subtitle { color: var(--gray-500); font-size: 14px; margin-bottom: 16px; }
+  
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--gray-500);
+    margin: 20px 0 12px 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--gray-300);
+  }
+  
+  .section-title.purple { color: var(--purple); border-color: var(--purple); }
+  .section-title.blue { color: var(--primary); border-color: var(--primary); }
   
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 10px 20px;
+    padding: 8px 16px;
     font-size: 14px;
     font-weight: 500;
     border-radius: 6px;
@@ -140,7 +181,6 @@ const STYLES = `
   .btn-primary:hover { background: #4096ff; }
   .btn-default { background: var(--white); border: 1px solid var(--gray-300); color: var(--gray-700); }
   .btn-default:hover { border-color: var(--primary); color: var(--primary); }
-  .btn-sm { padding: 6px 12px; font-size: 13px; }
   
   .player-select {
     display: grid;
@@ -162,33 +202,27 @@ const STYLES = `
     transform: translateY(-2px);
   }
   
-  .player-card .icon { font-size: 40px; margin-bottom: 12px; }
+  .player-card .icon { font-size: 36px; margin-bottom: 8px; }
   
   .input {
     width: 100%;
     padding: 10px 12px;
-    font-size: 15px;
+    font-size: 14px;
     border: 1px solid var(--gray-300);
     border-radius: 6px;
     font-family: inherit;
   }
   
-  .input:focus {
-    outline: none;
-    border-color: var(--primary);
-  }
-  
-  .input:disabled {
-    background: var(--gray-100);
-    cursor: not-allowed;
-  }
+  .input:focus { outline: none; border-color: var(--primary); }
+  .input:disabled { background: var(--gray-100); }
   
   .info-box {
     background: var(--gray-100);
     border: 1px solid var(--gray-300);
     border-radius: 6px;
-    padding: 16px;
-    margin: 16px 0;
+    padding: 14px;
+    margin: 12px 0;
+    font-size: 14px;
   }
   
   .info-box.blue { background: #e6f4ff; border-color: #91caff; }
@@ -197,31 +231,32 @@ const STYLES = `
   .content-box {
     background: var(--gray-100);
     border-radius: 6px;
-    padding: 16px;
+    padding: 14px;
     font-family: 'Courier New', monospace;
     white-space: pre-wrap;
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1.7;
-    margin: 12px 0;
+    margin: 8px 0;
   }
   
   .badge {
     display: inline-block;
-    padding: 3px 10px;
-    font-size: 12px;
+    padding: 2px 8px;
+    font-size: 11px;
     font-weight: 500;
     border-radius: 4px;
-    margin-left: 8px;
+    margin-left: 6px;
   }
   
   .badge-blue { background: #e6f4ff; color: var(--primary); }
+  .badge-purple { background: #f9f0ff; color: var(--purple); }
   .badge-green { background: #f6ffed; color: var(--success); }
   
   .message {
-    padding: 10px 14px;
+    padding: 8px 12px;
     border-radius: 6px;
-    margin-top: 12px;
-    font-size: 14px;
+    margin-top: 10px;
+    font-size: 13px;
   }
   
   .message.success { background: #f6ffed; border: 1px solid #b7eb8f; color: #389e0d; }
@@ -231,50 +266,38 @@ const STYLES = `
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
   }
   
-  .progress-text {
-    font-size: 14px;
-    color: var(--gray-500);
-  }
-  
-  .progress-text strong {
-    color: var(--success);
-  }
+  .progress-text { font-size: 13px; color: var(--gray-500); }
+  .progress-text strong { color: var(--success); }
   
   .form-row {
     display: flex;
     gap: 8px;
-    margin-top: 12px;
+    margin-top: 10px;
   }
   
   .form-row .input { flex: 1; }
   
-  .solved-badge {
-    color: var(--success);
-    font-weight: 600;
-  }
+  .solved-check { color: var(--success); font-weight: 600; }
   
-  .victory { text-align: center; padding: 48px 24px; }
-  .victory h1 { font-size: 48px; margin-bottom: 16px; }
-  
-  .refresh-note {
-    text-align: center;
+  .for-label {
+    font-size: 11px;
     color: var(--gray-500);
-    font-size: 13px;
-    margin-top: 16px;
+    margin-top: 8px;
   }
+  
+  .victory { text-align: center; padding: 40px 20px; }
+  .victory h1 { font-size: 42px; margin-bottom: 12px; }
   
   @media (max-width: 500px) {
     .player-select { grid-template-columns: 1fr; }
-    .container { padding: 16px; }
     .form-row { flex-direction: column; }
   }
 </style>
 `;
 
-// Landing page
 const landingHTML = `
 <!DOCTYPE html>
 <html lang="en">
@@ -289,34 +312,29 @@ const landingHTML = `
   <div class="container">
     <div class="card" style="text-align: center;">
       <h1>🔐 Escape Room</h1>
-      <p class="subtitle">A 2-player cooperative puzzle game</p>
+      <p class="subtitle">2-player cooperative puzzle game</p>
       
       <div class="info-box blue" style="text-align: left;">
-        <h3>📋 How to Play</h3>
-        <p style="margin-top: 8px;">
-          • <strong>Player 1</strong> sees clues & documents<br>
-          • <strong>Player 2</strong> sees puzzles to solve<br>
-          • Figure out which clue matches which puzzle!<br>
-          • <strong>Communicate</strong> to escape together 🗣️
-        </p>
+        <strong>📋 How it works:</strong><br>
+        • Each player has <strong>2 puzzles</strong> to solve<br>
+        • Each player has <strong>clues</strong> for the OTHER player<br>
+        • You must share info to escape! 🗣️
       </div>
       
       <div class="player-select">
         <a href="/play/1" class="card player-card" style="text-decoration: none; color: inherit;">
-          <div class="icon">🔍</div>
-          <h3 style="margin: 0;">Player 1</h3>
-          <p style="color: var(--gray-500); font-size: 14px;">Has the clues</p>
+          <div class="icon">🔵</div>
+          <h2 style="margin: 0;">Player 1</h2>
         </a>
         
         <a href="/play/2" class="card player-card" style="text-decoration: none; color: inherit;">
-          <div class="icon">🔧</div>
-          <h3 style="margin: 0;">Player 2</h3>
-          <p style="color: var(--gray-500); font-size: 14px;">Solves the puzzles</p>
+          <div class="icon">🟣</div>
+          <h2 style="margin: 0;">Player 2</h2>
         </a>
       </div>
       
       <div class="info-box yellow">
-        <strong>⚠️ Don't peek!</strong> Each player must only see their own screen.
+        ⚠️ <strong>Don't peek</strong> at each other's screens!
       </div>
     </div>
   </div>
@@ -324,15 +342,21 @@ const landingHTML = `
 </html>
 `;
 
-// Player 1 view - sees ALL clues
-function player1HTML(): string {
+function playerHTML(player: 1 | 2, message?: { puzzleId: string; type: string; text: string }): string {
+  const myPuzzles = player === 1 ? PLAYER1_PUZZLES : PLAYER2_PUZZLES;
+  const myClues = player === 1 ? PLAYER1_CLUES : PLAYER2_CLUES;
+  const otherPlayer = player === 1 ? 2 : 1;
+  
+  const totalPuzzles = PLAYER1_PUZZLES.length + PLAYER2_PUZZLES.length;
   const solvedCount = solvedPuzzles.size;
-  const totalPuzzles = PUZZLES.length;
   const allSolved = solvedCount === totalPuzzles;
   
   if (allSolved) {
     return victoryHTML();
   }
+  
+  const playerColor = player === 1 ? 'blue' : 'purple';
+  const playerEmoji = player === 1 ? '🔵' : '🟣';
   
   return `
 <!DOCTYPE html>
@@ -341,7 +365,7 @@ function player1HTML(): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="https://hl-apps.web.app/favicon.svg">
-  <title>🔍 Player 1 - Clues</title>
+  <title>${playerEmoji} Player ${player}</title>
   ${STYLES}
 </head>
 <body>
@@ -349,104 +373,36 @@ function player1HTML(): string {
     <div class="card">
       <div class="header">
         <div>
-          <a href="/" class="btn btn-default btn-sm">← Exit</a>
-          <span class="badge badge-blue">Player 1</span>
+          <a href="/" class="btn btn-default">← Exit</a>
+          <span class="badge badge-${playerColor}">Player ${player}</span>
         </div>
         <div class="progress-text">
-          <strong>${solvedCount}</strong> / ${totalPuzzles} solved
+          <strong>${solvedCount}</strong> / ${totalPuzzles} total
         </div>
       </div>
-      
-      <h1>🔍 Your Clues</h1>
-      <p class="subtitle">
-        These clues help solve puzzles. Figure out which clue matches which puzzle!<br>
-        <em>Not all clues may be useful...</em> 🤔
-      </p>
+      <h1>${playerEmoji} Player ${player}</h1>
+      <p class="subtitle">Solve your puzzles & share clues with Player ${otherPlayer}</p>
     </div>
     
-    ${CLUES.map(clue => `
-      <div class="card">
-        <h2>${clue.title}</h2>
-        <div class="content-box">${clue.content}</div>
-      </div>
-    `).join('')}
+    <div class="section-title ${playerColor}">🔧 Your Puzzles (solve these)</div>
     
-    <div class="info-box">
-      <strong>💡 Tip:</strong> Describe your clues to Player 2 and help them figure out which puzzle each clue solves!
-    </div>
-    
-    <p class="refresh-note">
-      <a href="/play/1" class="btn btn-default btn-sm">🔄 Refresh</a>
-      to see progress
-    </p>
-  </div>
-</body>
-</html>
-`;
-}
-
-// Player 2 view - sees ALL puzzles
-function player2HTML(message?: { puzzleId: number; type: string; text: string }): string {
-  const solvedCount = solvedPuzzles.size;
-  const totalPuzzles = PUZZLES.length;
-  const allSolved = solvedCount === totalPuzzles;
-  
-  if (allSolved) {
-    return victoryHTML();
-  }
-  
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" type="image/svg+xml" href="https://hl-apps.web.app/favicon.svg">
-  <title>🔧 Player 2 - Puzzles</title>
-  ${STYLES}
-</head>
-<body>
-  <div class="container">
-    <div class="card">
-      <div class="header">
-        <div>
-          <a href="/" class="btn btn-default btn-sm">← Exit</a>
-          <span class="badge badge-blue">Player 2</span>
-        </div>
-        <div class="progress-text">
-          <strong>${solvedCount}</strong> / ${totalPuzzles} solved
-        </div>
-      </div>
-      
-      <h1>🔧 Puzzles to Solve</h1>
-      <p class="subtitle">
-        Ask Player 1 for clues to help solve these puzzles!
-      </p>
-    </div>
-    
-    ${PUZZLES.map(puzzle => {
+    ${myPuzzles.map(puzzle => {
       const isSolved = solvedPuzzles.has(puzzle.id);
       const hasMessage = message && message.puzzleId === puzzle.id;
       
       return `
-        <div class="card ${isSolved ? 'solved' : ''}">
+        <div class="card puzzle ${isSolved ? 'solved' : ''}">
           <h2>
             ${puzzle.title}
-            ${isSolved ? '<span class="solved-badge">✅ Solved!</span>' : ''}
+            ${isSolved ? '<span class="solved-check">✅</span>' : ''}
           </h2>
-          <p style="color: var(--gray-600); margin-bottom: 12px;">${puzzle.description}</p>
+          <p style="color: var(--gray-600); font-size: 13px;">${puzzle.description}</p>
           
           ${isSolved ? '' : `
-            <form action="/play/2/answer" method="POST">
+            <form action="/play/${player}/answer" method="POST">
               <input type="hidden" name="puzzleId" value="${puzzle.id}">
               <div class="form-row">
-                <input 
-                  type="text" 
-                  name="answer" 
-                  class="input" 
-                  placeholder="${puzzle.placeholder}"
-                  autocomplete="off"
-                >
+                <input type="text" name="answer" class="input" placeholder="${puzzle.placeholder}" autocomplete="off">
                 <button type="submit" class="btn btn-primary">Submit</button>
               </div>
             </form>
@@ -456,8 +412,19 @@ function player2HTML(message?: { puzzleId: number; type: string; text: string })
       `;
     }).join('')}
     
-    <div class="info-box">
-      <strong>💡 Tip:</strong> Tell Player 1 what puzzles you see - they have the clues to help!
+    <div class="section-title purple">📋 Clues for Player ${otherPlayer}</div>
+    
+    ${myClues.map(clue => `
+      <div class="card clue">
+        <h2>${clue.title}</h2>
+        <div class="content-box">${clue.content}</div>
+        <p class="for-label">💡 This helps: ${clue.forPuzzle}</p>
+      </div>
+    `).join('')}
+    
+    <div class="info-box" style="text-align: center;">
+      <a href="/play/${player}" class="btn btn-default">🔄 Refresh</a>
+      <span style="color: var(--gray-500); margin-left: 8px; font-size: 13px;">to see updates</span>
     </div>
   </div>
 </body>
@@ -473,7 +440,7 @@ function victoryHTML(): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="https://hl-apps.web.app/favicon.svg">
-  <title>🎉 You Escaped!</title>
+  <title>🎉 Escaped!</title>
   ${STYLES}
 </head>
 <body>
@@ -481,13 +448,11 @@ function victoryHTML(): string {
     <div class="card victory">
       <h1>🎉</h1>
       <h1>ESCAPED!</h1>
-      <p style="font-size: 18px; margin: 24px 0; color: var(--gray-500);">
-        You solved all ${PUZZLES.length} puzzles together!
+      <p style="font-size: 16px; margin: 20px 0; color: var(--gray-500);">
+        All 4 puzzles solved!
       </p>
-      <p style="margin-bottom: 32px;">Great teamwork! 🤝</p>
-      <a href="/reset" class="btn btn-primary" style="font-size: 16px; padding: 14px 28px;">
-        Play Again
-      </a>
+      <p style="margin-bottom: 24px;">Great teamwork! 🤝</p>
+      <a href="/reset" class="btn btn-primary">Play Again</a>
     </div>
   </div>
 </body>
@@ -500,43 +465,41 @@ app.get('/', (req, res) => res.send(landingHTML));
 app.get('/apps/escape-room', (req, res) => res.send(landingHTML));
 app.get('/apps/escape-room/', (req, res) => res.send(landingHTML));
 
-app.get('/play/1', (req, res) => res.send(player1HTML()));
-app.get('/play/2', (req, res) => res.send(player2HTML()));
+app.get('/play/1', (req, res) => res.send(playerHTML(1)));
+app.get('/play/2', (req, res) => res.send(playerHTML(2)));
 
-app.post('/play/2/answer', (req, res) => {
+app.post('/play/:player/answer', (req, res) => {
+  const player = parseInt(req.params.player) as 1 | 2;
   const { puzzleId, answer } = req.body;
-  const id = parseInt(puzzleId);
   
-  const puzzle = PUZZLES.find(p => p.id === id);
+  const allPuzzles = [...PLAYER1_PUZZLES, ...PLAYER2_PUZZLES];
+  const puzzle = allPuzzles.find(p => p.id === puzzleId);
+  
   if (!puzzle) {
-    return res.redirect('/play/2');
+    return res.redirect(`/play/${player}`);
   }
   
-  // Already solved?
-  if (solvedPuzzles.has(id)) {
-    return res.send(player2HTML({ puzzleId: id, type: 'success', text: '✅ Already solved!' }));
+  if (solvedPuzzles.has(puzzleId)) {
+    return res.send(playerHTML(player, { puzzleId, type: 'success', text: '✅ Already solved!' }));
   }
   
-  // Check answer (case insensitive, trim whitespace)
   const correct = answer.trim().toUpperCase().replace(/\s+/g, '') === 
                   puzzle.answer.toUpperCase().replace(/\s+/g, '');
   
   if (correct) {
-    solvedPuzzles.add(id);
-    res.redirect('/play/2');
+    solvedPuzzles.add(puzzleId);
+    res.redirect(`/play/${player}`);
   } else {
-    res.send(player2HTML({ puzzleId: id, type: 'error', text: '❌ Incorrect, try again!' }));
+    res.send(playerHTML(player, { puzzleId, type: 'error', text: '❌ Try again!' }));
   }
 });
 
-// Reset game
 app.get('/reset', (req, res) => {
   solvedPuzzles = new Set();
   res.redirect('/');
 });
 
 app.get('/health', (req, res) => res.json({ status: 'healthy' }));
-app.get('/apps/escape-room/health', (req, res) => res.json({ status: 'healthy' }));
 
 app.listen(port, () => {
   console.log(`🔐 Escape Room running on port ${port}`);
