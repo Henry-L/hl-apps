@@ -6,6 +6,7 @@ const port = process.env.PORT || 8080;
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Simple in-memory game state (shared between both players on same device/session)
 // In a real couch co-op, players just communicate verbally - no sync needed!
