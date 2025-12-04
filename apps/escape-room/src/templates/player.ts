@@ -205,15 +205,6 @@ function gameScript(player: number, itemsJSON: string): string {
         const solved = getSolved();
         solved.add(itemId);
         saveSolved(solved);
-        
-        // Check if this unlocks new items
-        const newlyUnlocked = ALL_ITEMS.filter(i => i.unlockedBy === itemId);
-        if (newlyUnlocked.length > 0) {
-          setTimeout(() => {
-            alert('🔓 Something new has appeared!');
-          }, 300);
-        }
-        
         render();
       } else {
         msg.textContent = '❌ Nothing happens...';
