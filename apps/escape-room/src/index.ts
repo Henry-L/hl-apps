@@ -350,7 +350,7 @@ function playerHTML(player: 1 | 2): string {
       <div class="header">
         <a href="/" class="btn btn-default">← Exit</a>
         <div class="progress-text">
-          Escaped: <strong id="solved-count">0</strong> / 4
+          Solved: <strong id="solved-count">0</strong> / 2
         </div>
       </div>
       <h1>🔐 The Room</h1>
@@ -365,7 +365,7 @@ function playerHTML(player: 1 | 2): string {
       <p style="font-size: 15px; margin: 20px 0; color: var(--gray-500);">
         All puzzles solved. Freedom!
       </p>
-      <p style="margin-bottom: 24px;">Great teamwork 🤝</p>
+      <p style="margin-bottom: 24px;">You made it out! 🚪</p>
       <button class="btn btn-primary" onclick="resetGame()">Play Again</button>
     </div>
     
@@ -407,9 +407,9 @@ function playerHTML(player: 1 | 2): string {
       const container = document.getElementById('items-container');
       const shuffled = shuffleArray(ITEMS);
       
-      // Count total puzzles (items with hasInput)
-      const totalPuzzles = 4; // 2 per player, 4 total across both
-      const mySolvedCount = [...solved].length;
+      // Count my puzzles (items with hasInput)
+      const myPuzzleIds = ITEMS.filter(i => i.hasInput).map(i => i.id);
+      const mySolvedCount = myPuzzleIds.filter(id => solved.has(id)).length;
       
       document.getElementById('solved-count').textContent = mySolvedCount;
       
