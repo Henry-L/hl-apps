@@ -746,6 +746,6 @@ app.get('/apps/escape-room/health', (req: Request, res: Response) => {
 
 // Start server
 app.listen(port, () => {
-  console.log(\`🔐 Escape Room running on port \${port}\`);
+  console.log(`🔐 Escape Room running on port ${port}`);
 });
 
