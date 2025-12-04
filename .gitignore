@@ -58,7 +58,7 @@ secrets.json
 htmlcov/
 
 # Docker
-.dockerignore
+# (keep .dockerignore committed - it's needed for builds)
 
 # Cloud
 .gcloudignore
