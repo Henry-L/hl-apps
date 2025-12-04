@@ -8,78 +8,70 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Simple in-memory game state (shared between both players on same device/session)
-// In a real couch co-op, players just communicate verbally - no sync needed!
+// Track which puzzles are solved (resets on server restart)
+let solvedPuzzles: Set<number> = new Set();
 
-// Puzzle definitions - each has info split between players
-const PUZZLES = [
+// All the clues Player 1 sees (they need to figure out which goes with which puzzle)
+const CLUES = [
   {
     id: 1,
-    name: "The Locked Safe",
-    description: "A heavy safe blocks your escape. The combination is hidden...",
-    player1Info: {
-      title: "🔍 Torn Note Fragment",
-      content: "You found a torn piece of paper with symbols:\n\n▲ = 7\n● = 3\n■ = 9",
-      hint: "Tell Player 2 what each symbol means!"
-    },
-    player2Info: {
-      title: "🔐 Safe Keypad",
-      content: "The safe has a 4-digit code.\n\nAbove the keypad you see:\n● ▲ ■ ▲",
-      hint: "Ask Player 1 what the symbols mean, then enter the code!",
-      answer: "3797"
-    }
+    title: "🔍 Torn Note Fragment",
+    content: "A torn piece of paper with symbols:\n\n▲ = 7\n● = 3\n■ = 9"
   },
   {
     id: 2,
-    name: "The Color Wires",
-    description: "A tangle of wires blocks the door mechanism...",
-    player1Info: {
-      title: "📋 Maintenance Manual",
-      content: "WIRE CUTTING ORDER:\n\n1. Cut the wire that rhymes with 'bed'\n2. Cut the wire matching the sky\n3. Cut the wire of warning signs\n4. Cut the wire of fresh grass",
-      hint: "Describe the order to Player 2 using colors!"
-    },
-    player2Info: {
-      title: "✂️ Wire Panel",
-      content: "You see 4 colored wires:\n\n🔴 RED\n🔵 BLUE\n🟡 YELLOW\n🟢 GREEN\n\nEnter the colors in order, separated by commas.",
-      hint: "Ask Player 1 for the cutting order!",
-      answer: "RED,BLUE,YELLOW,GREEN"
-    }
+    title: "📋 Maintenance Manual",
+    content: "WIRE CUTTING ORDER:\n\n1. Cut the wire that rhymes with 'bed'\n2. Cut the wire matching the sky\n3. Cut the wire of warning signs\n4. Cut the wire of fresh grass"
   },
   {
     id: 3,
-    name: "The Map Coordinates",
-    description: "A locked cabinet contains the exit key...",
-    player1Info: {
-      title: "🗺️ Treasure Map",
-      content: "The map shows a grid with an X at:\n\nRow C, Column 4\n\nA note says:\n'Add 2 to the row letter,\nsubtract 1 from the column'",
-      hint: "Calculate the final position and tell Player 2!"
-    },
-    player2Info: {
-      title: "📍 Coordinate Lock",
-      content: "The lock has a grid selector:\n\n     1  2  3  4  5\n A   ·  ·  ·  ·  ·\n B   ·  ·  ·  ·  ·\n C   ·  ·  ·  ·  ·\n D   ·  ·  ·  ·  ·\n E   ·  ·  ·  ·  ·\n\nEnter as: E3, A1, etc.",
-      hint: "Ask Player 1 for the coordinates!",
-      answer: "E3"
-    }
+    title: "🗺️ Treasure Map",
+    content: "The map shows a grid with an X at:\n\nRow C, Column 4\n\nA note says:\n'Add 2 to the row letter,\nsubtract 1 from the column'"
   },
   {
     id: 4,
-    name: "The Clock Puzzle",
-    description: "An ancient clock holds the final secret...",
-    player1Info: {
-      title: "📜 Old Journal",
-      content: "Entry dated 1923:\n\n'The clock shows the hour when\nthe hour hand points to where\nthe sun sets (West on compass),\n\nand the minute hand points to\nthe number of seasons.'",
-      hint: "West = 9 on a clock face, Seasons = 4 (so :20). Tell Player 2!"
-    },
-    player2Info: {
-      title: "🕰️ Grandfather Clock",
-      content: "The clock hands can be set to any position.\n\nEnter the time in format: H:MM\n(like 3:45 or 12:00)",
-      hint: "Ask Player 1 what time to set!",
-      answer: "9:20"
-    }
+    title: "📜 Old Journal",
+    content: "Entry dated 1923:\n\n'The clock shows the hour when\nthe hour hand points to where\nthe sun sets (West on compass),\n\nand the minute hand points to\nthe number of seasons.'"
+  },
+  {
+    id: 5,
+    title: "📝 Cryptic Riddle",
+    content: "What has hands but can't clap?\nWhat has a face but can't smile?\nSet me right to escape in style."
   }
 ];
 
-// CSS following design guide - grayscale with color pops
+// All the puzzles Player 2 sees
+const PUZZLES = [
+  {
+    id: 1,
+    title: "🔐 The Safe",
+    description: "A 4-digit combination lock. Symbols above keypad: ● ▲ ■ ▲",
+    placeholder: "Enter 4 digits...",
+    answer: "3797"
+  },
+  {
+    id: 2,
+    title: "✂️ Wire Panel",
+    description: "4 wires: 🔴 RED, 🔵 BLUE, 🟡 YELLOW, 🟢 GREEN. Enter colors in order (comma separated).",
+    placeholder: "RED,BLUE,YELLOW,GREEN",
+    answer: "RED,BLUE,YELLOW,GREEN"
+  },
+  {
+    id: 3,
+    title: "📍 Coordinate Lock",
+    description: "A grid lock (A-E rows, 1-5 columns). Enter position like: E3",
+    placeholder: "Enter coordinate...",
+    answer: "E3"
+  },
+  {
+    id: 4,
+    title: "🕰️ Grandfather Clock",
+    description: "Set the clock hands. Enter time as H:MM (like 3:45)",
+    placeholder: "Enter time...",
+    answer: "9:20"
+  }
+];
+
 const STYLES = `
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -107,32 +99,34 @@ const STYLES = `
     line-height: 1.6;
   }
   
-  .container {
-    max-width: 600px;
-    margin: 0 auto;
-    padding: 24px;
-  }
+  .container { max-width: 700px; margin: 0 auto; padding: 24px; }
   
   .card {
     background: var(--white);
     border-radius: 8px;
-    padding: 24px;
+    padding: 20px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     margin-bottom: 16px;
   }
   
+  .card.solved {
+    opacity: 0.6;
+    background: #f6ffed;
+    border: 1px solid #b7eb8f;
+  }
+  
   h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
-  h2 { font-size: 22px; font-weight: 600; margin-bottom: 12px; }
+  h2 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
   h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; color: var(--gray-700); }
   
-  .subtitle { color: var(--gray-500); margin-bottom: 24px; }
+  .subtitle { color: var(--gray-500); margin-bottom: 20px; }
   
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 12px 24px;
-    font-size: 16px;
+    padding: 10px 20px;
+    font-size: 14px;
     font-weight: 500;
     border-radius: 6px;
     cursor: pointer;
@@ -146,9 +140,7 @@ const STYLES = `
   .btn-primary:hover { background: #4096ff; }
   .btn-default { background: var(--white); border: 1px solid var(--gray-300); color: var(--gray-700); }
   .btn-default:hover { border-color: var(--primary); color: var(--primary); }
-  .btn-success { background: var(--success); color: white; }
-  .btn-block { width: 100%; }
-  .btn-lg { padding: 16px 32px; font-size: 18px; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
   
   .player-select {
     display: grid;
@@ -174,8 +166,8 @@ const STYLES = `
   
   .input {
     width: 100%;
-    padding: 12px;
-    font-size: 16px;
+    padding: 10px 12px;
+    font-size: 15px;
     border: 1px solid var(--gray-300);
     border-radius: 6px;
     font-family: inherit;
@@ -184,7 +176,11 @@ const STYLES = `
   .input:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
+  }
+  
+  .input:disabled {
+    background: var(--gray-100);
+    cursor: not-allowed;
   }
   
   .info-box {
@@ -199,57 +195,81 @@ const STYLES = `
   .info-box.yellow { background: #fffbe6; border-color: #ffe58f; }
   
   .content-box {
-    background: var(--white);
-    border: 1px solid var(--gray-300);
+    background: var(--gray-100);
     border-radius: 6px;
-    padding: 20px;
+    padding: 16px;
     font-family: 'Courier New', monospace;
     white-space: pre-wrap;
-    font-size: 16px;
-    line-height: 1.8;
+    font-size: 14px;
+    line-height: 1.7;
     margin: 12px 0;
   }
   
-  .hint { color: var(--gray-500); font-size: 14px; margin-top: 12px; }
-  
   .badge {
     display: inline-block;
-    padding: 4px 12px;
+    padding: 3px 10px;
     font-size: 12px;
     font-weight: 500;
     border-radius: 4px;
-    margin-right: 8px;
+    margin-left: 8px;
   }
   
   .badge-blue { background: #e6f4ff; color: var(--primary); }
   .badge-green { background: #f6ffed; color: var(--success); }
   
   .message {
-    padding: 12px 16px;
+    padding: 10px 14px;
     border-radius: 6px;
-    margin: 16px 0;
+    margin-top: 12px;
+    font-size: 14px;
   }
   
   .message.success { background: #f6ffed; border: 1px solid #b7eb8f; color: #389e0d; }
   .message.error { background: #fff2f0; border: 1px solid #ffccc7; color: #cf1322; }
   
-  .nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-  
-  .progress { display: flex; gap: 6px; margin: 16px 0; }
-  .progress-dot {
-    width: 12px; height: 12px;
-    border-radius: 50%;
-    background: var(--gray-300);
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
   }
-  .progress-dot.done { background: var(--success); }
-  .progress-dot.current { background: var(--primary); }
+  
+  .progress-text {
+    font-size: 14px;
+    color: var(--gray-500);
+  }
+  
+  .progress-text strong {
+    color: var(--success);
+  }
+  
+  .form-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  
+  .form-row .input { flex: 1; }
+  
+  .solved-badge {
+    color: var(--success);
+    font-weight: 600;
+  }
   
   .victory { text-align: center; padding: 48px 24px; }
   .victory h1 { font-size: 48px; margin-bottom: 16px; }
   
+  .refresh-note {
+    text-align: center;
+    color: var(--gray-500);
+    font-size: 13px;
+    margin-top: 16px;
+  }
+  
   @media (max-width: 500px) {
     .player-select { grid-template-columns: 1fr; }
     .container { padding: 16px; }
+    .form-row { flex-direction: column; }
   }
 </style>
 `;
@@ -274,11 +294,10 @@ const landingHTML = `
       <div class="info-box blue" style="text-align: left;">
         <h3>📋 How to Play</h3>
         <p style="margin-top: 8px;">
-          • Grab a friend and sit together<br>
-          • Each player opens a different screen<br>
-          • You each see <strong>different clues</strong><br>
-          • <strong>Talk to each other</strong> to solve puzzles!<br>
-          • Don't peek at each other's screens! 👀
+          • <strong>Player 1</strong> sees clues & documents<br>
+          • <strong>Player 2</strong> sees puzzles to solve<br>
+          • Figure out which clue matches which puzzle!<br>
+          • <strong>Communicate</strong> to escape together 🗣️
         </p>
       </div>
       
@@ -286,18 +305,18 @@ const landingHTML = `
         <a href="/play/1" class="card player-card" style="text-decoration: none; color: inherit;">
           <div class="icon">🔍</div>
           <h3 style="margin: 0;">Player 1</h3>
-          <p style="color: var(--gray-500); font-size: 14px;">The Investigator</p>
+          <p style="color: var(--gray-500); font-size: 14px;">Has the clues</p>
         </a>
         
         <a href="/play/2" class="card player-card" style="text-decoration: none; color: inherit;">
           <div class="icon">🔧</div>
           <h3 style="margin: 0;">Player 2</h3>
-          <p style="color: var(--gray-500); font-size: 14px;">The Operator</p>
+          <p style="color: var(--gray-500); font-size: 14px;">Solves the puzzles</p>
         </a>
       </div>
       
       <div class="info-box yellow">
-        <strong>⚠️ Important:</strong> Don't show your screen to the other player!
+        <strong>⚠️ Don't peek!</strong> Each player must only see their own screen.
       </div>
     </div>
   </div>
@@ -305,16 +324,15 @@ const landingHTML = `
 </html>
 `;
 
-// Game page for each player
-function gameHTML(player: number, puzzleNum: number, message?: { type: string; text: string }): string {
-  const puzzle = PUZZLES[puzzleNum - 1];
+// Player 1 view - sees ALL clues
+function player1HTML(): string {
+  const solvedCount = solvedPuzzles.size;
+  const totalPuzzles = PUZZLES.length;
+  const allSolved = solvedCount === totalPuzzles;
   
-  if (!puzzle) {
+  if (allSolved) {
     return victoryHTML();
   }
-  
-  const info = player === 1 ? puzzle.player1Info : puzzle.player2Info;
-  const isOperator = player === 2;
   
   return `
 <!DOCTYPE html>
@@ -323,56 +341,124 @@ function gameHTML(player: number, puzzleNum: number, message?: { type: string; t
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="https://hl-apps.web.app/favicon.svg">
-  <title>🔐 Puzzle ${puzzleNum} - Player ${player}</title>
+  <title>🔍 Player 1 - Clues</title>
   ${STYLES}
 </head>
 <body>
   <div class="container">
     <div class="card">
-      <div class="nav">
-        <a href="/" class="btn btn-default" style="padding: 8px 16px;">← Back</a>
+      <div class="header">
         <div>
-          <span class="badge badge-blue">Player ${player}</span>
-          <span class="badge badge-green">Puzzle ${puzzleNum}/${PUZZLES.length}</span>
+          <a href="/" class="btn btn-default btn-sm">← Exit</a>
+          <span class="badge badge-blue">Player 1</span>
+        </div>
+        <div class="progress-text">
+          <strong>${solvedCount}</strong> / ${totalPuzzles} solved
         </div>
       </div>
       
-      <div class="progress">
-        ${PUZZLES.map((_, i) => `
-          <div class="progress-dot ${i < puzzleNum - 1 ? 'done' : i === puzzleNum - 1 ? 'current' : ''}"></div>
-        `).join('')}
+      <h1>🔍 Your Clues</h1>
+      <p class="subtitle">
+        These clues help solve puzzles. Figure out which clue matches which puzzle!<br>
+        <em>Not all clues may be useful...</em> 🤔
+      </p>
+    </div>
+    
+    ${CLUES.map(clue => `
+      <div class="card">
+        <h2>${clue.title}</h2>
+        <div class="content-box">${clue.content}</div>
+      </div>
+    `).join('')}
+    
+    <div class="info-box">
+      <strong>💡 Tip:</strong> Describe your clues to Player 2 and help them figure out which puzzle each clue solves!
+    </div>
+    
+    <p class="refresh-note">
+      <a href="/play/1" class="btn btn-default btn-sm">🔄 Refresh</a>
+      to see progress
+    </p>
+  </div>
+</body>
+</html>
+`;
+}
+
+// Player 2 view - sees ALL puzzles
+function player2HTML(message?: { puzzleId: number; type: string; text: string }): string {
+  const solvedCount = solvedPuzzles.size;
+  const totalPuzzles = PUZZLES.length;
+  const allSolved = solvedCount === totalPuzzles;
+  
+  if (allSolved) {
+    return victoryHTML();
+  }
+  
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="https://hl-apps.web.app/favicon.svg">
+  <title>🔧 Player 2 - Puzzles</title>
+  ${STYLES}
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="header">
+        <div>
+          <a href="/" class="btn btn-default btn-sm">← Exit</a>
+          <span class="badge badge-blue">Player 2</span>
+        </div>
+        <div class="progress-text">
+          <strong>${solvedCount}</strong> / ${totalPuzzles} solved
+        </div>
       </div>
       
-      <h2>${puzzle.name}</h2>
-      <p style="color: var(--gray-500);">${puzzle.description}</p>
+      <h1>🔧 Puzzles to Solve</h1>
+      <p class="subtitle">
+        Ask Player 1 for clues to help solve these puzzles!
+      </p>
     </div>
     
-    <div class="card" style="border-left: 4px solid var(--primary);">
-      <h3>${info.title}</h3>
-      <div class="content-box">${info.content}</div>
-      <p class="hint">💡 ${info.hint}</p>
-    </div>
+    ${PUZZLES.map(puzzle => {
+      const isSolved = solvedPuzzles.has(puzzle.id);
+      const hasMessage = message && message.puzzleId === puzzle.id;
+      
+      return `
+        <div class="card ${isSolved ? 'solved' : ''}">
+          <h2>
+            ${puzzle.title}
+            ${isSolved ? '<span class="solved-badge">✅ Solved!</span>' : ''}
+          </h2>
+          <p style="color: var(--gray-600); margin-bottom: 12px;">${puzzle.description}</p>
+          
+          ${isSolved ? '' : `
+            <form action="/play/2/answer" method="POST">
+              <input type="hidden" name="puzzleId" value="${puzzle.id}">
+              <div class="form-row">
+                <input 
+                  type="text" 
+                  name="answer" 
+                  class="input" 
+                  placeholder="${puzzle.placeholder}"
+                  autocomplete="off"
+                >
+                <button type="submit" class="btn btn-primary">Submit</button>
+              </div>
+            </form>
+            ${hasMessage ? `<div class="message ${message.type}">${message.text}</div>` : ''}
+          `}
+        </div>
+      `;
+    }).join('')}
     
-    ${isOperator ? `
-      <div class="card">
-        <h3>🎯 Enter Your Answer</h3>
-        <form action="/play/${player}/answer" method="POST">
-          <input type="hidden" name="puzzle" value="${puzzleNum}">
-          <input type="text" name="answer" class="input" placeholder="Type your answer..." autocomplete="off" autofocus>
-          <button type="submit" class="btn btn-primary btn-block" style="margin-top: 12px;">
-            Submit Answer
-          </button>
-        </form>
-        ${message ? `<div class="message ${message.type}">${message.text}</div>` : ''}
-      </div>
-    ` : `
-      <div class="info-box" style="text-align: center;">
-        <p>📢 <strong>Share this info with Player 2!</strong></p>
-        <p style="font-size: 14px; color: var(--gray-500); margin-top: 8px;">
-          They need your clues to solve the puzzle.
-        </p>
-      </div>
-    `}
+    <div class="info-box">
+      <strong>💡 Tip:</strong> Tell Player 1 what puzzles you see - they have the clues to help!
+    </div>
   </div>
 </body>
 </html>
@@ -396,10 +482,12 @@ function victoryHTML(): string {
       <h1>🎉</h1>
       <h1>ESCAPED!</h1>
       <p style="font-size: 18px; margin: 24px 0; color: var(--gray-500);">
-        Congratulations! You solved all ${PUZZLES.length} puzzles!
+        You solved all ${PUZZLES.length} puzzles together!
       </p>
       <p style="margin-bottom: 32px;">Great teamwork! 🤝</p>
-      <a href="/" class="btn btn-primary btn-lg">Play Again</a>
+      <a href="/reset" class="btn btn-primary" style="font-size: 16px; padding: 14px 28px;">
+        Play Again
+      </a>
     </div>
   </div>
 </body>
@@ -407,46 +495,43 @@ function victoryHTML(): string {
 `;
 }
 
-// Simple state - just track current puzzle (resets on server restart)
-let currentPuzzle = 1;
-
 // Routes
 app.get('/', (req, res) => res.send(landingHTML));
 app.get('/apps/escape-room', (req, res) => res.send(landingHTML));
 app.get('/apps/escape-room/', (req, res) => res.send(landingHTML));
 
-app.get('/play/:player', (req, res) => {
-  const player = parseInt(req.params.player);
-  if (player !== 1 && player !== 2) {
-    return res.redirect('/');
-  }
-  res.send(gameHTML(player, currentPuzzle));
-});
+app.get('/play/1', (req, res) => res.send(player1HTML()));
+app.get('/play/2', (req, res) => res.send(player2HTML()));
 
-app.post('/play/:player/answer', (req, res) => {
-  const player = parseInt(req.params.player);
-  const { answer, puzzle } = req.body;
-  const puzzleNum = parseInt(puzzle);
+app.post('/play/2/answer', (req, res) => {
+  const { puzzleId, answer } = req.body;
+  const id = parseInt(puzzleId);
   
-  const currentPuzzleData = PUZZLES[puzzleNum - 1];
-  if (!currentPuzzleData) {
-    return res.redirect('/');
+  const puzzle = PUZZLES.find(p => p.id === id);
+  if (!puzzle) {
+    return res.redirect('/play/2');
   }
   
-  const correct = answer.trim().toUpperCase() === currentPuzzleData.player2Info.answer.toUpperCase();
+  // Already solved?
+  if (solvedPuzzles.has(id)) {
+    return res.send(player2HTML({ puzzleId: id, type: 'success', text: '✅ Already solved!' }));
+  }
+  
+  // Check answer (case insensitive, trim whitespace)
+  const correct = answer.trim().toUpperCase().replace(/\s+/g, '') === 
+                  puzzle.answer.toUpperCase().replace(/\s+/g, '');
   
   if (correct) {
-    currentPuzzle = puzzleNum + 1;
-    // Redirect to next puzzle (or victory)
-    res.redirect(`/play/${player}`);
+    solvedPuzzles.add(id);
+    res.redirect('/play/2');
   } else {
-    res.send(gameHTML(player, puzzleNum, { type: 'error', text: '❌ Incorrect! Try again.' }));
+    res.send(player2HTML({ puzzleId: id, type: 'error', text: '❌ Incorrect, try again!' }));
   }
 });
 
 // Reset game
 app.get('/reset', (req, res) => {
-  currentPuzzle = 1;
+  solvedPuzzles = new Set();
   res.redirect('/');
 });
 
