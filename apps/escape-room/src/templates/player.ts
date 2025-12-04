@@ -14,6 +14,29 @@ export function playerHTML(player: 1 | 2): string {
   <link rel="icon" type="image/svg+xml" href="https://hl-apps.web.app/favicon.svg">
   <title>🔐 Player ${player}</title>
   ${STYLES}
+  <style>
+    .unlocked {
+      animation: fadeIn 0.5s ease-out;
+      border-left: 3px solid var(--success) !important;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .new-badge {
+      background: var(--success);
+      color: white;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-left: 8px;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -21,7 +44,7 @@ export function playerHTML(player: 1 | 2): string {
       <div class="header">
         <a href="/" class="btn btn-default">← Exit</a>
         <div class="progress-text">
-          Solved: <strong id="solved-count">0</strong> / 2
+          Solved: <strong id="solved-count">0</strong> / <span id="total-count">0</span>
         </div>
       </div>
       <h1>🔐 The Room</h1>
@@ -56,10 +79,11 @@ function gameScript(player: number, itemsJSON: string): string {
   return `
   <script>
     const PLAYER = ${player};
-    const ITEMS = ${itemsJSON};
+    const ALL_ITEMS = ${itemsJSON};
     const STORAGE_KEY = 'escapeRoom_solved_p' + PLAYER;
+    const SEEN_KEY = 'escapeRoom_seen_p' + PLAYER;
     
-    // Get solved puzzles from localStorage (each browser/device has its own)
+    // Get solved puzzles from localStorage
     function getSolved() {
       try {
         return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
@@ -72,6 +96,19 @@ function gameScript(player: number, itemsJSON: string): string {
       localStorage.setItem(STORAGE_KEY, JSON.stringify([...solved]));
     }
     
+    // Track which items have been seen (to show "NEW" badge)
+    function getSeen() {
+      try {
+        return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'));
+      } catch {
+        return new Set();
+      }
+    }
+    
+    function saveSeen(seen) {
+      localStorage.setItem(SEEN_KEY, JSON.stringify([...seen]));
+    }
+    
     function shuffleArray(arr) {
       const a = [...arr];
       for (let i = a.length - 1; i > 0; i--) {
@@ -81,36 +118,58 @@ function gameScript(player: number, itemsJSON: string): string {
       return a;
     }
     
+    // Get items that are currently visible (unlocked)
+    function getVisibleItems(solved) {
+      return ALL_ITEMS.filter(item => {
+        if (!item.unlockedBy) return true; // No requirement = always visible
+        return solved.has(item.unlockedBy); // Visible if requirement is solved
+      });
+    }
+    
     function render() {
       const solved = getSolved();
+      const seen = getSeen();
       const container = document.getElementById('items-container');
-      const shuffled = shuffleArray(ITEMS);
       
-      // Count my puzzles (items with hasInput)
-      const myPuzzleIds = ITEMS.filter(i => i.hasInput).map(i => i.id);
-      const mySolvedCount = myPuzzleIds.filter(id => solved.has(id)).length;
+      // Get visible items based on what's been solved
+      const visibleItems = getVisibleItems(solved);
+      const shuffled = shuffleArray(visibleItems);
+      
+      // Count puzzles
+      const myPuzzles = visibleItems.filter(i => i.hasInput);
+      const mySolvedCount = myPuzzles.filter(p => solved.has(p.id)).length;
+      const totalPuzzles = ALL_ITEMS.filter(i => i.hasInput).length;
       
       document.getElementById('solved-count').textContent = mySolvedCount;
+      document.getElementById('total-count').textContent = totalPuzzles;
       
-      // Check victory (this player solved their 2 puzzles)
-      const myPuzzles = ITEMS.filter(i => i.hasInput);
-      const allMySolved = myPuzzles.every(p => solved.has(p.id));
+      // Check victory (all puzzles solved)
+      const allPuzzles = ALL_ITEMS.filter(i => i.hasInput);
+      const allSolved = allPuzzles.every(p => solved.has(p.id));
       
-      if (allMySolved) {
+      if (allSolved) {
         document.getElementById('victory').classList.add('show');
         document.getElementById('footer').classList.add('hidden');
         container.innerHTML = '';
         return;
       }
       
+      // Mark all visible items as seen
+      const newSeen = new Set(seen);
+      visibleItems.forEach(item => newSeen.add(item.id));
+      saveSeen(newSeen);
+      
       container.innerHTML = shuffled.map(item => {
         const isSolved = item.hasInput && solved.has(item.id);
+        const isNew = !seen.has(item.id);
+        const isUnlocked = item.unlockedBy && solved.has(item.unlockedBy);
         
         return \`
-          <div class="card item-card \${isSolved ? 'solved' : ''}" id="card-\${item.id}">
+          <div class="card item-card \${isSolved ? 'solved' : ''} \${isUnlocked ? 'unlocked' : ''}" id="card-\${item.id}">
             <h2>
               \${item.title}
               \${isSolved ? '<span class="solved-badge">✅</span>' : ''}
+              \${isNew ? '<span class="new-badge">NEW</span>' : ''}
             </h2>
             <div class="content-box">\${item.content}</div>
             
@@ -134,7 +193,7 @@ function gameScript(player: number, itemsJSON: string): string {
     }
     
     function tryAnswer(itemId) {
-      const item = ITEMS.find(i => i.id === itemId);
+      const item = ALL_ITEMS.find(i => i.id === itemId);
       if (!item || !item.answer) return;
       
       const input = document.getElementById('input-' + itemId);
@@ -146,6 +205,15 @@ function gameScript(player: number, itemsJSON: string): string {
         const solved = getSolved();
         solved.add(itemId);
         saveSolved(solved);
+        
+        // Check if this unlocks new items
+        const newlyUnlocked = ALL_ITEMS.filter(i => i.unlockedBy === itemId);
+        if (newlyUnlocked.length > 0) {
+          setTimeout(() => {
+            alert('🔓 Something new has appeared!');
+          }, 300);
+        }
+        
         render();
       } else {
         msg.textContent = '❌ Nothing happens...';
@@ -161,6 +229,7 @@ function gameScript(player: number, itemsJSON: string): string {
     
     function resetGame() {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(SEEN_KEY);
       render();
     }
     
@@ -169,4 +238,3 @@ function gameScript(player: number, itemsJSON: string): string {
   </script>
 `;
 }
-
