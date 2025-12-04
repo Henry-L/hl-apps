@@ -6,10 +6,6 @@ const port = process.env.PORT || 8080;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Track which puzzles are solved
-let solvedPuzzles: Set<string> = new Set();
 
 // Everything Player 1 sees (puzzles, clues, and red herrings all mixed)
 const PLAYER1_ITEMS = [
@@ -68,7 +64,6 @@ const PLAYER1_ITEMS = [
   }
 ];
 
-// Everything Player 2 sees (puzzles, clues, and red herrings all mixed)
 const PLAYER2_ITEMS = [
   {
     type: 'clue',
@@ -125,16 +120,6 @@ const PLAYER2_ITEMS = [
   }
 ];
 
-// Shuffle function
-function shuffle<T>(array: T[]): T[] {
-  const arr = [...array];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
 const STYLES = `
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -172,10 +157,7 @@ const STYLES = `
     margin-bottom: 12px;
   }
   
-  .card.solved {
-    opacity: 0.4;
-    background: #f6ffed;
-  }
+  .card.solved { opacity: 0.4; background: #f6ffed; }
   
   h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
   h2 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
@@ -262,8 +244,10 @@ const STYLES = `
     border-radius: 6px;
     margin-top: 10px;
     font-size: 13px;
+    display: none;
   }
   
+  .message.show { display: block; }
   .message.success { background: #f6ffed; border: 1px solid #b7eb8f; color: #389e0d; }
   .message.error { background: #fff2f0; border: 1px solid #ffccc7; color: #cf1322; }
   
@@ -287,12 +271,12 @@ const STYLES = `
   
   .solved-badge { color: var(--success); font-weight: 600; margin-left: 8px; }
   
-  .victory { text-align: center; padding: 40px 20px; }
+  .victory { text-align: center; padding: 40px 20px; display: none; }
+  .victory.show { display: block; }
   .victory h1 { font-size: 40px; margin-bottom: 12px; }
   
-  .item-card {
-    border-left: 3px solid var(--gray-300);
-  }
+  .item-card { border-left: 3px solid var(--gray-300); }
+  .hidden { display: none !important; }
   
   @media (max-width: 500px) {
     .player-select { grid-template-columns: 1fr; }
@@ -346,18 +330,9 @@ const landingHTML = `
 </html>
 `;
 
-function playerHTML(player: 1 | 2, message?: { itemId: string; type: string; text: string }): string {
+function playerHTML(player: 1 | 2): string {
   const items = player === 1 ? PLAYER1_ITEMS : PLAYER2_ITEMS;
-  // Shuffle items each time for variety (but keep puzzles trackable by ID)
-  const shuffledItems = shuffle(items);
-  
-  const totalPuzzles = 4; // 2 per player
-  const solvedCount = solvedPuzzles.size;
-  const allSolved = solvedCount === totalPuzzles;
-  
-  if (allSolved) {
-    return victoryHTML();
-  }
+  const itemsJSON = JSON.stringify(items);
   
   return `
 <!DOCTYPE html>
@@ -375,71 +350,144 @@ function playerHTML(player: 1 | 2, message?: { itemId: string; type: string; tex
       <div class="header">
         <a href="/" class="btn btn-default">← Exit</a>
         <div class="progress-text">
-          Escaped: <strong>${solvedCount}</strong> / ${totalPuzzles}
+          Escaped: <strong id="solved-count">0</strong> / 4
         </div>
       </div>
       <h1>🔐 The Room</h1>
       <p class="subtitle">You look around and find these items...</p>
     </div>
     
-    ${shuffledItems.map(item => {
-      const isSolved = item.hasInput && solvedPuzzles.has(item.id);
-      const hasMessage = message && message.itemId === item.id;
-      
-      return `
-        <div class="card item-card ${isSolved ? 'solved' : ''}">
-          <h2>
-            ${item.title}
-            ${isSolved ? '<span class="solved-badge">✅</span>' : ''}
-          </h2>
-          <div class="content-box">${item.content}</div>
-          
-          ${item.hasInput && !isSolved ? `
-            <form action="/play/${player}/answer" method="POST">
-              <input type="hidden" name="itemId" value="${item.id}">
-              <div class="form-row">
-                <input type="text" name="answer" class="input" placeholder="${item.placeholder}" autocomplete="off">
-                <button type="submit" class="btn btn-primary">Try</button>
-              </div>
-            </form>
-            ${hasMessage ? `<div class="message ${message.type}">${message.text}</div>` : ''}
-          ` : ''}
-        </div>
-      `;
-    }).join('')}
+    <div id="items-container"></div>
     
-    <div style="text-align: center; margin-top: 16px;">
-      <a href="/play/${player}" class="btn btn-default">🔄 Look around again</a>
-    </div>
-  </div>
-</body>
-</html>
-`;
-}
-
-function victoryHTML(): string {
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" type="image/svg+xml" href="https://hl-apps.web.app/favicon.svg">
-  <title>🎉 Escaped!</title>
-  ${STYLES}
-</head>
-<body>
-  <div class="container">
-    <div class="card victory">
+    <div id="victory" class="card victory">
       <h1>🎉</h1>
       <h1>YOU ESCAPED!</h1>
       <p style="font-size: 15px; margin: 20px 0; color: var(--gray-500);">
         All puzzles solved. Freedom!
       </p>
       <p style="margin-bottom: 24px;">Great teamwork 🤝</p>
-      <a href="/reset" class="btn btn-primary">Play Again</a>
+      <button class="btn btn-primary" onclick="resetGame()">Play Again</button>
+    </div>
+    
+    <div id="footer" style="text-align: center; margin-top: 16px;">
+      <button class="btn btn-default" onclick="shuffle()">🔄 Look around again</button>
+      <button class="btn btn-default" onclick="resetGame()" style="margin-left: 8px;">↺ Reset</button>
     </div>
   </div>
+  
+  <script>
+    const PLAYER = ${player};
+    const ITEMS = ${itemsJSON};
+    const STORAGE_KEY = 'escapeRoom_solved_p' + PLAYER;
+    
+    // Get solved puzzles from localStorage (each browser/device has its own)
+    function getSolved() {
+      try {
+        return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
+      } catch {
+        return new Set();
+      }
+    }
+    
+    function saveSolved(solved) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...solved]));
+    }
+    
+    function shuffleArray(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+    
+    function render() {
+      const solved = getSolved();
+      const container = document.getElementById('items-container');
+      const shuffled = shuffleArray(ITEMS);
+      
+      // Count total puzzles (items with hasInput)
+      const totalPuzzles = 4; // 2 per player, 4 total across both
+      const mySolvedCount = [...solved].length;
+      
+      document.getElementById('solved-count').textContent = mySolvedCount;
+      
+      // Check victory (this player solved their 2 puzzles)
+      const myPuzzles = ITEMS.filter(i => i.hasInput);
+      const allMySolved = myPuzzles.every(p => solved.has(p.id));
+      
+      if (allMySolved) {
+        document.getElementById('victory').classList.add('show');
+        document.getElementById('footer').classList.add('hidden');
+        container.innerHTML = '';
+        return;
+      }
+      
+      container.innerHTML = shuffled.map(item => {
+        const isSolved = item.hasInput && solved.has(item.id);
+        
+        return \`
+          <div class="card item-card \${isSolved ? 'solved' : ''}" id="card-\${item.id}">
+            <h2>
+              \${item.title}
+              \${isSolved ? '<span class="solved-badge">✅</span>' : ''}
+            </h2>
+            <div class="content-box">\${item.content}</div>
+            
+            \${item.hasInput && !isSolved ? \`
+              <div class="form-row">
+                <input 
+                  type="text" 
+                  class="input" 
+                  id="input-\${item.id}" 
+                  placeholder="\${item.placeholder}" 
+                  autocomplete="off"
+                  onkeypress="if(event.key==='Enter')tryAnswer('\${item.id}')"
+                >
+                <button class="btn btn-primary" onclick="tryAnswer('\${item.id}')">Try</button>
+              </div>
+              <div class="message" id="msg-\${item.id}"></div>
+            \` : ''}
+          </div>
+        \`;
+      }).join('');
+    }
+    
+    function tryAnswer(itemId) {
+      const item = ITEMS.find(i => i.id === itemId);
+      if (!item || !item.answer) return;
+      
+      const input = document.getElementById('input-' + itemId);
+      const msg = document.getElementById('msg-' + itemId);
+      const answer = input.value.trim().toUpperCase().replace(/\\s+/g, '');
+      const correct = answer === item.answer.toUpperCase().replace(/\\s+/g, '');
+      
+      if (correct) {
+        const solved = getSolved();
+        solved.add(itemId);
+        saveSolved(solved);
+        render();
+      } else {
+        msg.textContent = '❌ Nothing happens...';
+        msg.className = 'message error show';
+        input.value = '';
+        input.focus();
+      }
+    }
+    
+    function shuffle() {
+      render();
+    }
+    
+    function resetGame() {
+      localStorage.removeItem(STORAGE_KEY);
+      render();
+    }
+    
+    // Initial render
+    render();
+  </script>
 </body>
 </html>
 `;
@@ -452,37 +500,6 @@ app.get('/apps/escape-room/', (req, res) => res.send(landingHTML));
 
 app.get('/play/1', (req, res) => res.send(playerHTML(1)));
 app.get('/play/2', (req, res) => res.send(playerHTML(2)));
-
-app.post('/play/:player/answer', (req, res) => {
-  const player = parseInt(req.params.player) as 1 | 2;
-  const { itemId, answer } = req.body;
-  
-  const allItems = [...PLAYER1_ITEMS, ...PLAYER2_ITEMS];
-  const item = allItems.find(i => i.id === itemId);
-  
-  if (!item || !item.hasInput) {
-    return res.redirect(`/play/${player}`);
-  }
-  
-  if (solvedPuzzles.has(itemId)) {
-    return res.send(playerHTML(player, { itemId, type: 'success', text: '✅ Already solved!' }));
-  }
-  
-  const correct = answer.trim().toUpperCase().replace(/\s+/g, '') === 
-                  item.answer!.toUpperCase().replace(/\s+/g, '');
-  
-  if (correct) {
-    solvedPuzzles.add(itemId);
-    res.redirect(`/play/${player}`);
-  } else {
-    res.send(playerHTML(player, { itemId, type: 'error', text: '❌ Nothing happens...' }));
-  }
-});
-
-app.get('/reset', (req, res) => {
-  solvedPuzzles = new Set();
-  res.redirect('/');
-});
 
 app.get('/health', (req, res) => res.json({ status: 'healthy' }));
 
