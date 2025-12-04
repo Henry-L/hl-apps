@@ -11,85 +11,129 @@ app.use(express.urlencoded({ extended: true }));
 // Track which puzzles are solved
 let solvedPuzzles: Set<string> = new Set();
 
-// Player 1's puzzles (Player 2 has the clues for these)
-const PLAYER1_PUZZLES = [
+// Everything Player 1 sees (puzzles, clues, and red herrings all mixed)
+const PLAYER1_ITEMS = [
   {
+    type: 'puzzle',
     id: 'p1-safe',
-    title: "🔐 The Safe",
-    description: "A 4-digit combination lock. Above it are symbols: ● ▲ ■ ▲",
-    placeholder: "Enter 4 digits...",
+    title: "🔐 Heavy Safe",
+    content: "A locked safe with a 4-digit keypad. Strange symbols above it: ● ▲ ■ ▲",
+    hasInput: true,
+    placeholder: "Enter code...",
     answer: "3797"
   },
   {
+    type: 'clue',
+    id: 'c1-wires',
+    title: "📋 Maintenance Manual",
+    content: "EMERGENCY WIRE PROTOCOL:\n\n1. First cut what rhymes with 'bed'\n2. Then the color of a clear sky\n3. Next, the color of warning signs\n4. Finally, the color of spring grass",
+    hasInput: false
+  },
+  {
+    type: 'puzzle',
     id: 'p1-clock',
     title: "🕰️ Grandfather Clock",
-    description: "Set the clock hands to the correct time. Format: H:MM",
-    placeholder: "e.g. 3:45",
+    content: "An antique clock. The hands can be moved. Something feels important about the time...",
+    hasInput: true,
+    placeholder: "Set time (H:MM)...",
     answer: "9:20"
+  },
+  {
+    type: 'clue',
+    id: 'c1-grid',
+    title: "🗺️ Old Map",
+    content: "A dusty map with a grid. An X is marked at:\nRow C, Column 4\n\nScrawled in the margin:\n'Go 2 rows down,\n1 column left'",
+    hasInput: false
+  },
+  {
+    type: 'herring',
+    id: 'h1-photo',
+    title: "📸 Faded Photograph",
+    content: "A family photo from 1952.\nFour people standing in front of a house.\nThe house number reads: 7734",
+    hasInput: false
+  },
+  {
+    type: 'herring',
+    id: 'h1-recipe',
+    title: "📝 Recipe Card",
+    content: "GRANDMOTHER'S SECRET SOUP\n\n2 cups water\n3 carrots\n1 onion\n4 potatoes\n\n'Stir clockwise 7 times'",
+    hasInput: false
+  },
+  {
+    type: 'herring',
+    id: 'h1-ticket',
+    title: "🎫 Concert Ticket",
+    content: "THE ROLLING KEYS\nLive at Madison Square\nRow Q, Seat 17\nDoors: 7:30 PM",
+    hasInput: false
   }
 ];
 
-// Player 2's puzzles (Player 1 has the clues for these)
-const PLAYER2_PUZZLES = [
+// Everything Player 2 sees (puzzles, clues, and red herrings all mixed)
+const PLAYER2_ITEMS = [
   {
+    type: 'clue',
+    id: 'c2-symbols',
+    title: "🔍 Torn Note",
+    content: "Found crumpled in a corner:\n\n▲ = 7\n● = 3\n■ = 9\n\n(the rest is torn off)",
+    hasInput: false
+  },
+  {
+    type: 'puzzle',
     id: 'p2-wires',
     title: "✂️ Wire Panel",
-    description: "4 wires: 🔴 RED, 🔵 BLUE, 🟡 YELLOW, 🟢 GREEN. Enter cutting order.",
-    placeholder: "RED,BLUE,YELLOW,GREEN",
+    content: "A mess of wires behind a panel:\n🔴 RED   🔵 BLUE\n🟡 YELLOW   🟢 GREEN\n\nCut them in the right order!",
+    hasInput: true,
+    placeholder: "e.g. RED,BLUE,YELLOW,GREEN",
     answer: "RED,BLUE,YELLOW,GREEN"
   },
   {
+    type: 'clue',
+    id: 'c2-journal',
+    title: "📜 Journal Entry",
+    content: "March 15th, 1923\n\n'The old clock holds the secret.\nPoint the hour to where\nsun meets horizon in evening.\nMinutes show the seasons count.'",
+    hasInput: false
+  },
+  {
+    type: 'puzzle',
     id: 'p2-grid',
-    title: "📍 Coordinate Lock",
-    description: "A grid (rows A-E, columns 1-5). Enter position like: E3",
-    placeholder: "Enter coordinate...",
+    title: "📍 Grid Lock",
+    content: "A strange lock with a 5x5 grid:\n\n    1  2  3  4  5\nA   ○  ○  ○  ○  ○\nB   ○  ○  ○  ○  ○\nC   ○  ○  ○  ○  ○\nD   ○  ○  ○  ○  ○\nE   ○  ○  ○  ○  ○",
+    hasInput: true,
+    placeholder: "Enter coordinate (e.g. B3)...",
     answer: "E3"
+  },
+  {
+    type: 'herring',
+    id: 'h2-calendar',
+    title: "📅 Old Calendar",
+    content: "DECEMBER 1987\n\nCircled dates: 3, 12, 25\n\nNote: 'Don't forget the party!\nBring 4 bottles of wine.'",
+    hasInput: false
+  },
+  {
+    type: 'herring',
+    id: 'h2-newspaper',
+    title: "📰 Newspaper Clipping",
+    content: "LOCAL MAN WINS LOTTERY\n\nNumbers: 7-14-21-28-35\n\n'I always knew lucky 7\nwould save me,' he said.",
+    hasInput: false
+  },
+  {
+    type: 'herring',
+    id: 'h2-postcard',
+    title: "✉️ Postcard",
+    content: "Greetings from BERMUDA!\n\nWeather is lovely.\nRoom 447 has ocean view.\nSee you in 2 weeks!\n\n- Uncle Frank",
+    hasInput: false
   }
 ];
 
-// Clues Player 1 sees (these help Player 2 solve THEIR puzzles)
-const PLAYER1_CLUES = [
-  {
-    id: 'c1-wires',
-    title: "📋 Maintenance Manual",
-    content: "WIRE CUTTING ORDER:\n\n1. Rhymes with 'bed'\n2. Color of the sky\n3. Warning sign color\n4. Fresh grass color",
-    forPuzzle: "Player 2's Wire Panel"
-  },
-  {
-    id: 'c1-grid',
-    title: "🗺️ Treasure Map", 
-    content: "X marks the spot at: Row C, Column 4\n\nNote attached:\n'Add 2 to row letter,\nsubtract 1 from column'",
-    forPuzzle: "Player 2's Coordinate Lock"
-  },
-  {
-    id: 'c1-decoy',
-    title: "📝 Torn Grocery List",
-    content: "...eggs\n...milk\n...bread\n...mysterious key?\n\n(smudged and unreadable)",
-    forPuzzle: "???"
+// Shuffle function
+function shuffle<T>(array: T[]): T[] {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-];
-
-// Clues Player 2 sees (these help Player 1 solve THEIR puzzles)
-const PLAYER2_CLUES = [
-  {
-    id: 'c2-safe',
-    title: "🔍 Symbol Decoder",
-    content: "Found on a torn note:\n\n▲ = 7\n● = 3\n■ = 9",
-    forPuzzle: "Player 1's Safe"
-  },
-  {
-    id: 'c2-clock',
-    title: "📜 Old Journal Entry",
-    content: "Entry dated 1923:\n\n'Set the hour hand where\nthe sun sets (West)...\n\nSet minutes to the\nnumber of seasons.'",
-    forPuzzle: "Player 1's Clock"
-  },
-  {
-    id: 'c2-decoy',
-    title: "🎭 Theater Ticket",
-    content: "ADMIT ONE\nRow Z, Seat 99\nShow: 'The Red Herring'\n8:00 PM",
-    forPuzzle: "???"
-  }
-];
+  return arr;
+}
 
 const STYLES = `
 <style>
@@ -108,7 +152,6 @@ const STYLES = `
     --primary: #1677ff;
     --success: #52c41a;
     --error: #ff4d4f;
-    --purple: #722ed1;
   }
   
   body {
@@ -119,48 +162,25 @@ const STYLES = `
     line-height: 1.6;
   }
   
-  .container { max-width: 700px; margin: 0 auto; padding: 20px; }
+  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
   
   .card {
     background: var(--white);
     border-radius: 8px;
-    padding: 20px;
+    padding: 18px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     margin-bottom: 12px;
   }
   
   .card.solved {
-    opacity: 0.5;
+    opacity: 0.4;
     background: #f6ffed;
   }
   
-  .card.clue {
-    border-left: 4px solid var(--purple);
-  }
+  h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+  h2 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
   
-  .card.puzzle {
-    border-left: 4px solid var(--primary);
-  }
-  
-  h1 { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
-  h2 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
-  h3 { font-size: 14px; font-weight: 600; color: var(--gray-500); margin-bottom: 4px; }
-  
-  .subtitle { color: var(--gray-500); font-size: 14px; margin-bottom: 16px; }
-  
-  .section-title {
-    font-size: 13px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--gray-500);
-    margin: 20px 0 12px 0;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--gray-300);
-  }
-  
-  .section-title.purple { color: var(--purple); border-color: var(--purple); }
-  .section-title.blue { color: var(--primary); border-color: var(--primary); }
+  .subtitle { color: var(--gray-500); font-size: 13px; margin-bottom: 16px; }
   
   .btn {
     display: inline-flex;
@@ -190,7 +210,7 @@ const STYLES = `
   }
   
   .player-card {
-    padding: 24px;
+    padding: 28px;
     text-align: center;
     cursor: pointer;
     transition: all 0.2s;
@@ -202,7 +222,7 @@ const STYLES = `
     transform: translateY(-2px);
   }
   
-  .player-card .icon { font-size: 36px; margin-bottom: 8px; }
+  .player-card .icon { font-size: 32px; margin-bottom: 8px; }
   
   .input {
     width: 100%;
@@ -214,7 +234,6 @@ const STYLES = `
   }
   
   .input:focus { outline: none; border-color: var(--primary); }
-  .input:disabled { background: var(--gray-100); }
   
   .info-box {
     background: var(--gray-100);
@@ -222,7 +241,7 @@ const STYLES = `
     border-radius: 6px;
     padding: 14px;
     margin: 12px 0;
-    font-size: 14px;
+    font-size: 13px;
   }
   
   .info-box.blue { background: #e6f4ff; border-color: #91caff; }
@@ -235,22 +254,8 @@ const STYLES = `
     font-family: 'Courier New', monospace;
     white-space: pre-wrap;
     font-size: 13px;
-    line-height: 1.7;
-    margin: 8px 0;
+    line-height: 1.6;
   }
-  
-  .badge {
-    display: inline-block;
-    padding: 2px 8px;
-    font-size: 11px;
-    font-weight: 500;
-    border-radius: 4px;
-    margin-left: 6px;
-  }
-  
-  .badge-blue { background: #e6f4ff; color: var(--primary); }
-  .badge-purple { background: #f9f0ff; color: var(--purple); }
-  .badge-green { background: #f6ffed; color: var(--success); }
   
   .message {
     padding: 8px 12px;
@@ -266,7 +271,7 @@ const STYLES = `
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
   
   .progress-text { font-size: 13px; color: var(--gray-500); }
@@ -275,21 +280,19 @@ const STYLES = `
   .form-row {
     display: flex;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: 12px;
   }
   
   .form-row .input { flex: 1; }
   
-  .solved-check { color: var(--success); font-weight: 600; }
-  
-  .for-label {
-    font-size: 11px;
-    color: var(--gray-500);
-    margin-top: 8px;
-  }
+  .solved-badge { color: var(--success); font-weight: 600; margin-left: 8px; }
   
   .victory { text-align: center; padding: 40px 20px; }
-  .victory h1 { font-size: 42px; margin-bottom: 12px; }
+  .victory h1 { font-size: 40px; margin-bottom: 12px; }
+  
+  .item-card {
+    border-left: 3px solid var(--gray-300);
+  }
   
   @media (max-width: 500px) {
     .player-select { grid-template-columns: 1fr; }
@@ -315,26 +318,27 @@ const landingHTML = `
       <p class="subtitle">2-player cooperative puzzle game</p>
       
       <div class="info-box blue" style="text-align: left;">
-        <strong>📋 How it works:</strong><br>
-        • Each player has <strong>2 puzzles</strong> to solve<br>
-        • Each player has <strong>clues</strong> for the OTHER player<br>
-        • You must share info to escape! 🗣️
+        <strong>📋 Rules:</strong><br>
+        • Each player sees different things<br>
+        • Some items are puzzles, some are clues<br>
+        • Figure out what helps what!<br>
+        • Talk to each other to escape 🗣️
       </div>
       
       <div class="player-select">
         <a href="/play/1" class="card player-card" style="text-decoration: none; color: inherit;">
-          <div class="icon">🔵</div>
+          <div class="icon">👤</div>
           <h2 style="margin: 0;">Player 1</h2>
         </a>
         
         <a href="/play/2" class="card player-card" style="text-decoration: none; color: inherit;">
-          <div class="icon">🟣</div>
+          <div class="icon">👤</div>
           <h2 style="margin: 0;">Player 2</h2>
         </a>
       </div>
       
       <div class="info-box yellow">
-        ⚠️ <strong>Don't peek</strong> at each other's screens!
+        ⚠️ <strong>No peeking</strong> at each other's screens!
       </div>
     </div>
   </div>
@@ -342,21 +346,18 @@ const landingHTML = `
 </html>
 `;
 
-function playerHTML(player: 1 | 2, message?: { puzzleId: string; type: string; text: string }): string {
-  const myPuzzles = player === 1 ? PLAYER1_PUZZLES : PLAYER2_PUZZLES;
-  const myClues = player === 1 ? PLAYER1_CLUES : PLAYER2_CLUES;
-  const otherPlayer = player === 1 ? 2 : 1;
+function playerHTML(player: 1 | 2, message?: { itemId: string; type: string; text: string }): string {
+  const items = player === 1 ? PLAYER1_ITEMS : PLAYER2_ITEMS;
+  // Shuffle items each time for variety (but keep puzzles trackable by ID)
+  const shuffledItems = shuffle(items);
   
-  const totalPuzzles = PLAYER1_PUZZLES.length + PLAYER2_PUZZLES.length;
+  const totalPuzzles = 4; // 2 per player
   const solvedCount = solvedPuzzles.size;
   const allSolved = solvedCount === totalPuzzles;
   
   if (allSolved) {
     return victoryHTML();
   }
-  
-  const playerColor = player === 1 ? 'blue' : 'purple';
-  const playerEmoji = player === 1 ? '🔵' : '🟣';
   
   return `
 <!DOCTYPE html>
@@ -365,66 +366,50 @@ function playerHTML(player: 1 | 2, message?: { puzzleId: string; type: string; t
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="https://hl-apps.web.app/favicon.svg">
-  <title>${playerEmoji} Player ${player}</title>
+  <title>🔐 Player ${player}</title>
   ${STYLES}
 </head>
 <body>
   <div class="container">
     <div class="card">
       <div class="header">
-        <div>
-          <a href="/" class="btn btn-default">← Exit</a>
-          <span class="badge badge-${playerColor}">Player ${player}</span>
-        </div>
+        <a href="/" class="btn btn-default">← Exit</a>
         <div class="progress-text">
-          <strong>${solvedCount}</strong> / ${totalPuzzles} total
+          Escaped: <strong>${solvedCount}</strong> / ${totalPuzzles}
         </div>
       </div>
-      <h1>${playerEmoji} Player ${player}</h1>
-      <p class="subtitle">Solve your puzzles & share clues with Player ${otherPlayer}</p>
+      <h1>🔐 The Room</h1>
+      <p class="subtitle">You look around and find these items...</p>
     </div>
     
-    <div class="section-title ${playerColor}">🔧 Your Puzzles (solve these)</div>
-    
-    ${myPuzzles.map(puzzle => {
-      const isSolved = solvedPuzzles.has(puzzle.id);
-      const hasMessage = message && message.puzzleId === puzzle.id;
+    ${shuffledItems.map(item => {
+      const isSolved = item.hasInput && solvedPuzzles.has(item.id);
+      const hasMessage = message && message.itemId === item.id;
       
       return `
-        <div class="card puzzle ${isSolved ? 'solved' : ''}">
+        <div class="card item-card ${isSolved ? 'solved' : ''}">
           <h2>
-            ${puzzle.title}
-            ${isSolved ? '<span class="solved-check">✅</span>' : ''}
+            ${item.title}
+            ${isSolved ? '<span class="solved-badge">✅</span>' : ''}
           </h2>
-          <p style="color: var(--gray-600); font-size: 13px;">${puzzle.description}</p>
+          <div class="content-box">${item.content}</div>
           
-          ${isSolved ? '' : `
+          ${item.hasInput && !isSolved ? `
             <form action="/play/${player}/answer" method="POST">
-              <input type="hidden" name="puzzleId" value="${puzzle.id}">
+              <input type="hidden" name="itemId" value="${item.id}">
               <div class="form-row">
-                <input type="text" name="answer" class="input" placeholder="${puzzle.placeholder}" autocomplete="off">
-                <button type="submit" class="btn btn-primary">Submit</button>
+                <input type="text" name="answer" class="input" placeholder="${item.placeholder}" autocomplete="off">
+                <button type="submit" class="btn btn-primary">Try</button>
               </div>
             </form>
             ${hasMessage ? `<div class="message ${message.type}">${message.text}</div>` : ''}
-          `}
+          ` : ''}
         </div>
       `;
     }).join('')}
     
-    <div class="section-title purple">📋 Clues for Player ${otherPlayer}</div>
-    
-    ${myClues.map(clue => `
-      <div class="card clue">
-        <h2>${clue.title}</h2>
-        <div class="content-box">${clue.content}</div>
-        <p class="for-label">💡 This helps: ${clue.forPuzzle}</p>
-      </div>
-    `).join('')}
-    
-    <div class="info-box" style="text-align: center;">
-      <a href="/play/${player}" class="btn btn-default">🔄 Refresh</a>
-      <span style="color: var(--gray-500); margin-left: 8px; font-size: 13px;">to see updates</span>
+    <div style="text-align: center; margin-top: 16px;">
+      <a href="/play/${player}" class="btn btn-default">🔄 Look around again</a>
     </div>
   </div>
 </body>
@@ -447,11 +432,11 @@ function victoryHTML(): string {
   <div class="container">
     <div class="card victory">
       <h1>🎉</h1>
-      <h1>ESCAPED!</h1>
-      <p style="font-size: 16px; margin: 20px 0; color: var(--gray-500);">
-        All 4 puzzles solved!
+      <h1>YOU ESCAPED!</h1>
+      <p style="font-size: 15px; margin: 20px 0; color: var(--gray-500);">
+        All puzzles solved. Freedom!
       </p>
-      <p style="margin-bottom: 24px;">Great teamwork! 🤝</p>
+      <p style="margin-bottom: 24px;">Great teamwork 🤝</p>
       <a href="/reset" class="btn btn-primary">Play Again</a>
     </div>
   </div>
@@ -470,27 +455,27 @@ app.get('/play/2', (req, res) => res.send(playerHTML(2)));
 
 app.post('/play/:player/answer', (req, res) => {
   const player = parseInt(req.params.player) as 1 | 2;
-  const { puzzleId, answer } = req.body;
+  const { itemId, answer } = req.body;
   
-  const allPuzzles = [...PLAYER1_PUZZLES, ...PLAYER2_PUZZLES];
-  const puzzle = allPuzzles.find(p => p.id === puzzleId);
+  const allItems = [...PLAYER1_ITEMS, ...PLAYER2_ITEMS];
+  const item = allItems.find(i => i.id === itemId);
   
-  if (!puzzle) {
+  if (!item || !item.hasInput) {
     return res.redirect(`/play/${player}`);
   }
   
-  if (solvedPuzzles.has(puzzleId)) {
-    return res.send(playerHTML(player, { puzzleId, type: 'success', text: '✅ Already solved!' }));
+  if (solvedPuzzles.has(itemId)) {
+    return res.send(playerHTML(player, { itemId, type: 'success', text: '✅ Already solved!' }));
   }
   
   const correct = answer.trim().toUpperCase().replace(/\s+/g, '') === 
-                  puzzle.answer.toUpperCase().replace(/\s+/g, '');
+                  item.answer!.toUpperCase().replace(/\s+/g, '');
   
   if (correct) {
-    solvedPuzzles.add(puzzleId);
+    solvedPuzzles.add(itemId);
     res.redirect(`/play/${player}`);
   } else {
-    res.send(playerHTML(player, { puzzleId, type: 'error', text: '❌ Try again!' }));
+    res.send(playerHTML(player, { itemId, type: 'error', text: '❌ Nothing happens...' }));
   }
 });
 
