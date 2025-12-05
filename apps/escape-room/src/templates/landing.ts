@@ -1,6 +1,7 @@
 import { STYLES } from './styles';
 
-export const landingHTML = `
+export function getLandingHTML(basePath: string = '') {
+  return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -25,12 +26,12 @@ export const landingHTML = `
       </div>
       
       <div class="player-select">
-        <a href="/play/1" class="card player-card" style="text-decoration: none; color: inherit;">
+        <a href="${basePath}/play/1" class="card player-card" style="text-decoration: none; color: inherit;">
           <div class="icon">👤</div>
           <h2 style="margin: 0;">Player 1</h2>
         </a>
         
-        <a href="/play/2" class="card player-card" style="text-decoration: none; color: inherit;">
+        <a href="${basePath}/play/2" class="card player-card" style="text-decoration: none; color: inherit;">
           <div class="icon">👤</div>
           <h2 style="margin: 0;">Player 2</h2>
         </a>
@@ -44,4 +45,7 @@ export const landingHTML = `
 </body>
 </html>
 `;
+}
 
+// Keep backwards compatibility
+export const landingHTML = getLandingHTML();

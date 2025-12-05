@@ -1,9 +1,10 @@
 import { STYLES } from './styles';
 import { Item, PLAYER1_ITEMS, PLAYER2_ITEMS } from '../data/items';
 
-export function playerHTML(player: 1 | 2): string {
+export function playerHTML(player: 1 | 2, basePath: string = ''): string {
   const items = player === 1 ? PLAYER1_ITEMS : PLAYER2_ITEMS;
   const itemsJSON = JSON.stringify(items);
+  const exitPath = basePath || '/';
   
   return `
 <!DOCTYPE html>
@@ -42,7 +43,7 @@ export function playerHTML(player: 1 | 2): string {
   <div class="container">
     <div class="card">
       <div class="header">
-        <a href="/" class="btn btn-default">← Exit</a>
+        <a href="${exitPath}" class="btn btn-default">← Exit</a>
         <div class="progress-text">
           Solved: <strong id="solved-count">0</strong> / <span id="total-count">0</span>
         </div>
