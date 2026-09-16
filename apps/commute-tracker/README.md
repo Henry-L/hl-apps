@@ -170,8 +170,7 @@ Perfect for personal use! 🎉
 ## Future Enhancements
 
 Ideas for v2:
-- Weather integration (correlate traffic with weather)
-- Multi-user support with authentication
+- Weather analytics (weather is already recorded, but stats don't use it yet)
 - Compare routes (different paths to work)
 - Export data to CSV
 - Push notifications for optimal departure time

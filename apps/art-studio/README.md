@@ -32,18 +32,36 @@ AI-powered wall art generator using **FREE Gemini API** for prompt enhancement +
 4. Create a new API key
 5. Copy your API key
 
-### 2. Store API Key in Secret Manager
+### 2. Get a Gemini API Key (optional)
+
+Used for prompt enhancement, on the free tier. Without it the app falls back to
+local enhancement and still works.
+
+1. Go to https://aistudio.google.com/apikey
+2. Create an API key and copy it
+
+### 3. Store API Keys in Secret Manager
+
+The app reads both keys from the unified `app-secrets` JSON secret — see
+[../../docs/unified-secrets-guide.md](../../docs/unified-secrets-guide.md).
+
+```json
+{
+  "stability_api_key": "sk-your-stability-key",
+  "gemini_api_key": "your-gemini-key"
+}
+```
+
+**Legacy:** an individual secret also works.
 
 ```bash
-# Enable Secret Manager
 gcloud services enable secretmanager.googleapis.com
 
-# Create secret with your Stability AI key
 echo -n "sk-YOUR-STABILITY-API-KEY-HERE" | \
   gcloud secrets create stability-api-key --data-file=-
 ```
 
-### 3. Deploy to Cloud Run
+### 4. Deploy to Cloud Run
 
 **With unified secrets (recommended):**
 ```bash
@@ -91,10 +109,11 @@ Add to your `firebase.json`:
 npm install
 
 # Option A: Use unified secrets JSON
-export APP_SECRETS='{"stability_api_key":"sk-your-key-here"}'
+export APP_SECRETS='{"stability_api_key":"sk-your-key-here","gemini_api_key":"your-gemini-key"}'
 
-# Option B: Use individual env var
+# Option B: Use individual env vars
 export STABILITY_API_KEY="sk-your-key-here"
+export GEMINI_API_KEY="your-gemini-key"   # optional
 
 # Run dev server
 npm run dev
@@ -107,18 +126,18 @@ Visit http://localhost:8080
 ### 1. User Input
 User enters a simple prompt like "mountain landscape at sunset"
 
-### 2. Prompt Enhancement (Free - No Gemini!)
-App automatically enhances the prompt locally with:
-- Artistic quality terms
-- Print optimization keywords
-- High resolution specifications
-- Wall art context
+### 2. Prompt Enhancement (Gemini, free tier)
+The prompt is rewritten by `gemini-1.5-flash` into a detailed art-generation prompt,
+factoring in the selected art style and print size.
+
+If no Gemini key is configured — or the Gemini call fails — the app falls back to a
+local template that appends quality and print keywords. No API call, no cost.
 
 Example enhancement:
 > "mountain landscape at sunset, ultra high resolution, 8K quality, print-ready, professional photography, perfect for wall art and 16x20 inch print, gallery quality, highly detailed, sharp focus, vibrant colors, masterpiece"
 
 ### 3. Image Generation (Stability AI)
-Enhanced prompt sent to Stability AI SD3:
+Enhanced prompt sent to Stability AI `sd3-large`:
 - Generates high-quality images
 - Matches selected aspect ratio
 - Returns PNG for download
@@ -130,17 +149,16 @@ User downloads print-ready image file
 ## Cost
 
 ### Prompt Enhancement: **$0.00** 🎉
-- Local prompt enhancement (no Gemini!)
-- No API calls for optimization
-- Completely free
+- Uses `gemini-1.5-flash` on the Gemini API free tier
+- Falls back to free local enhancement if unavailable
 
 ### Image Generation: Stability AI Credits
 - Uses your existing Stability AI credits
-- **SD3**: ~$0.065 per image
-- **SD3 Turbo**: ~$0.04 per image (faster)
+- **SD3 Large**: ~$0.065 per image
+- **SD3 Turbo**: ~$0.04 per image (faster — change the `model` field in the code)
 
 ### Example Monthly Cost (25 images)
-- Prompt Enhancement: $0.00 (local, no Gemini!)
+- Prompt Enhancement: $0.00 (Gemini free tier)
 - Stability: 25 × $0.065 = ~$1.63
 - **Total: ~$1.63/month**
 
@@ -174,10 +192,10 @@ With your existing Stability credits: **free until credits run out!**
 ## Technology Stack
 
 - **Backend**: TypeScript + Express
-- **Prompt Enhancement**: Local (free, no Gemini costs!)
-- **Image Generation**: Stability AI SD3
+- **Prompt Enhancement**: Gemini 1.5 Flash (free tier), local fallback
+- **Image Generation**: Stability AI SD3 Large
 - **Deployment**: Cloud Run
-- **Secrets**: Secret Manager (for Stability API key only)
+- **Secrets**: Secret Manager (`stability_api_key`, `gemini_api_key`)
 
 ## Troubleshooting
 
@@ -191,21 +209,26 @@ With your existing Stability credits: **free until credits run out!**
 - Verify API key is valid
 - Check Cloud Run logs for detailed error
 
+### Prompts aren't being enhanced by Gemini
+- The startup log says which path is active: `✓ Gemini API initialized` or
+  `⚠ Gemini API key not found - using local enhancement`
+- Check that `gemini_api_key` is present in `APP_SECRETS` (or `GEMINI_API_KEY` is set)
+- Gemini failures fall back to local enhancement silently to the user, but are logged
+
 ### Slow generation
 - SD3 takes ~10-15 seconds per image
-- Use SD3 Turbo for faster results (change model in code)
+- Use `sd3-large-turbo` for faster results (change the `model` field in the code)
 - This is normal for high-quality image generation
 
 ### Image quality issues
 - Try being more descriptive in your prompt
 - Mention specific art styles
-- The local enhancement already adds quality keywords, so focus on the subject/style
+- Enhancement already adds quality keywords, so focus on the subject and style
 
 ## Future Enhancements
 
 Ideas for v2:
 - Gallery to save favorite generations
-- Multiple style presets
 - Batch generation
 - Image upscaling
 - Custom aspect ratios
